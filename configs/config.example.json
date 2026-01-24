@@ -1,0 +1,45 @@
+{
+    "server": {
+        "listen": ":8080",
+        "readTimeout": 30,
+        "writeTimeout": 30,
+        "idleTimeout": 120
+    },
+    "node": {
+        "name": "hk-edge",
+        "id": 1,
+        "region": "as-e",
+        "location": "Hong Kong",
+        "provider": "example"
+    },
+    "controlPlane": {
+        "url": "https://cp.moenet.example.com",
+        "token": "your-agent-token-here",
+        "requestTimeout": 15,
+        "heartbeatInterval": 30,
+        "syncInterval": 60,
+        "metricInterval": 60
+    },
+    "bird": {
+        "controlSocket": "/var/run/bird/bird.ctl",
+        "poolSize": 5,
+        "poolSizeMax": 64,
+        "peerConfDir": "/etc/bird/peers",
+        "peerConfTemplateFile": "./templates/peer.conf.tmpl",
+        "ibgpConfDir": "/etc/bird/ibgp.d"
+    },
+    "wireguard": {
+        "privateKeyPath": "/etc/wireguard/privatekey",
+        "publicKeyPath": "/etc/wireguard/publickey",
+        "configDir": "/etc/wireguard",
+        "persistentKeepaliveInterval": 25,
+        "dn42Ipv4": "172.22.188.1",
+        "dn42Ipv6": "fd00:4242:7777::1",
+        "dn42Ipv6LinkLocal": "fe80::1"
+    },
+    "metric": {
+        "pingTimeout": 5,
+        "pingCount": 4,
+        "pingWorkers": 32
+    }
+}

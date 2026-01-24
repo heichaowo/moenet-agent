@@ -1,0 +1,23 @@
+[Unit]
+Description=MoeNet DN42 Agent
+After=network.target bird.service
+Wants=bird.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/moenet-agent
+ExecStart=/opt/moenet-agent/moenet-agent -c /opt/moenet-agent/config.json
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
