@@ -14,16 +14,24 @@ func TestNewTemplateRenderer(t *testing.T) {
 	ibgpConfDir := filepath.Join(tmpDir, "ibgp")
 
 	// Create template directory and files
-	os.MkdirAll(templateDir, 0755)
+	if err := os.MkdirAll(templateDir, 0755); err != nil {
+		t.Fatalf("Failed to create template dir: %v", err)
+	}
 
 	ebgpTemplate := `# eBGP peer AS{{.ASN}}`
-	os.WriteFile(filepath.Join(templateDir, "ebgp.conf.tmpl"), []byte(ebgpTemplate), 0644)
+	if err := os.WriteFile(filepath.Join(templateDir, "ebgp.conf.tmpl"), []byte(ebgpTemplate), 0644); err != nil {
+		t.Fatalf("Failed to write ebgp template: %v", err)
+	}
 
 	ibgpTemplate := `# iBGP peers`
-	os.WriteFile(filepath.Join(templateDir, "ibgp.conf.tmpl"), []byte(ibgpTemplate), 0644)
+	if err := os.WriteFile(filepath.Join(templateDir, "ibgp.conf.tmpl"), []byte(ibgpTemplate), 0644); err != nil {
+		t.Fatalf("Failed to write ibgp template: %v", err)
+	}
 
 	// Rename the files to match what the renderer expects
-	os.Rename(filepath.Join(templateDir, "ebgp.conf.tmpl"), filepath.Join(templateDir, "peer.conf.tmpl"))
+	if err := os.Rename(filepath.Join(templateDir, "ebgp.conf.tmpl"), filepath.Join(templateDir, "peer.conf.tmpl")); err != nil {
+		t.Fatalf("Failed to rename template: %v", err)
+	}
 
 	renderer, err := NewTemplateRenderer(templateDir, peerConfDir, ibgpConfDir)
 	if err != nil {
@@ -46,7 +54,9 @@ func TestNewTemplateRenderer(t *testing.T) {
 func TestWritePeer(t *testing.T) {
 	tmpDir := t.TempDir()
 	peerConfDir := filepath.Join(tmpDir, "peers")
-	os.MkdirAll(peerConfDir, 0755)
+	if err := os.MkdirAll(peerConfDir, 0755); err != nil {
+		t.Fatalf("Failed to create peer conf dir: %v", err)
+	}
 
 	renderer := &TemplateRenderer{
 		peerConfDir: peerConfDir,
@@ -73,11 +83,15 @@ func TestWritePeer(t *testing.T) {
 func TestRemovePeer(t *testing.T) {
 	tmpDir := t.TempDir()
 	peerConfDir := filepath.Join(tmpDir, "peers")
-	os.MkdirAll(peerConfDir, 0755)
+	if err := os.MkdirAll(peerConfDir, 0755); err != nil {
+		t.Fatalf("Failed to create peer conf dir: %v", err)
+	}
 
 	// Create a peer file
 	peerFile := filepath.Join(peerConfDir, "dn42_4242420919.conf")
-	os.WriteFile(peerFile, []byte("test"), 0644)
+	if err := os.WriteFile(peerFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to create peer file: %v", err)
+	}
 
 	renderer := &TemplateRenderer{
 		peerConfDir: peerConfDir,
@@ -110,12 +124,16 @@ func TestRemovePeerNonexistent(t *testing.T) {
 func TestRenderPeer(t *testing.T) {
 	tmpDir := t.TempDir()
 	templateDir := filepath.Join(tmpDir, "templates")
-	os.MkdirAll(templateDir, 0755)
+	if err := os.MkdirAll(templateDir, 0755); err != nil {
+		t.Fatalf("Failed to create template dir: %v", err)
+	}
 
 	// Create a simple template
 	tmpl := `# Peer AS{{.ASN}} - {{.Name}}
 neighbor {{.NeighborAddr}} as {{.ASN}};`
-	os.WriteFile(filepath.Join(templateDir, "peer.conf.tmpl"), []byte(tmpl), 0644)
+	if err := os.WriteFile(filepath.Join(templateDir, "peer.conf.tmpl"), []byte(tmpl), 0644); err != nil {
+		t.Fatalf("Failed to write template: %v", err)
+	}
 
 	renderer, err := NewTemplateRenderer(templateDir, tmpDir, tmpDir)
 	if err != nil {

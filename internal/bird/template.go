@@ -78,8 +78,12 @@ func NewTemplateRenderer(templateDir, peerConfDir, ibgpConfDir string) (*Templat
 	}
 
 	// Ensure output directories exist
-	os.MkdirAll(peerConfDir, 0755)
-	os.MkdirAll(ibgpConfDir, 0755)
+	if err := os.MkdirAll(peerConfDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create peer conf dir: %w", err)
+	}
+	if err := os.MkdirAll(ibgpConfDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create ibgp conf dir: %w", err)
+	}
 
 	return r, nil
 }

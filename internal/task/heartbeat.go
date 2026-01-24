@@ -146,7 +146,7 @@ func (h *Heartbeat) getUptime() int64 {
 	}
 
 	var uptime float64
-	fmt.Sscanf(string(data), "%f", &uptime)
+	_, _ = fmt.Sscanf(string(data), "%f", &uptime)
 	return int64(uptime)
 }
 
@@ -186,7 +186,7 @@ func (h *Heartbeat) getNetStat(fieldIdx int) uint64 {
 		}
 
 		var val uint64
-		fmt.Sscanf(fields[fieldIdx], "%d", &val)
+		_, _ = fmt.Sscanf(fields[fieldIdx], "%d", &val)
 		total += val
 	}
 	return total

@@ -1,6 +1,6 @@
-# Binaries
-moenet-agent
-moenet-agent-linux-*
+# Binaries (only at repo root)
+/moenet-agent
+/moenet-agent-linux-*
 
 # Config with secrets
 config.json

@@ -25,7 +25,7 @@
         "poolSize": 5,
         "poolSizeMax": 64,
         "peerConfDir": "/etc/bird/peers",
-        "peerConfTemplateFile": "./templates/peer.conf.tmpl",
+        "ebgpConfTemplateFile": "./templates/ebgp.conf.tmpl",
         "ibgpConfDir": "/etc/bird/ibgp.d"
     },
     "wireguard": {

@@ -1,6 +1,6 @@
 # MoeNet Agent
 
-[![Go Version](https://img.shields.io/badge/Go-1.23%2B-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.25%2B-blue.svg)](https://golang.org)
 
 A Go agent for automated BGP peering session management on MoeNet DN42 infrastructure nodes. Communicates with the MoeNet Control Plane to orchestrate BGP session lifecycle, WireGuard tunnel configuration, and real-time performance metrics.
 

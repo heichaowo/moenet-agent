@@ -49,7 +49,7 @@ type BirdConfig struct {
 	PoolSize             int    `json:"poolSize"`
 	PoolSizeMax          int    `json:"poolSizeMax"`
 	PeerConfDir          string `json:"peerConfDir"`
-	PeerConfTemplateFile string `json:"peerConfTemplateFile"`
+	EbgpConfTemplateFile string `json:"ebgpConfTemplateFile"`
 	IBGPConfDir          string `json:"ibgpConfDir"`
 }
 
