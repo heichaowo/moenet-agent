@@ -108,6 +108,25 @@ systemctl start moenet-agent
 
 ## Configuration
 
+### Bootstrap Mode (Recommended)
+
+Agent can fetch configuration from Control Plane at startup:
+
+```json
+{
+  "bootstrap": {
+    "controlPlaneUrl": "https://api.moenet.work",
+    "nodeName": "jp-edge",
+    "token": "your-agent-token"
+  },
+  "server": { "listen": ":24368" }
+}
+```
+
+The agent fetches `nodeId`, `region`, `loopback IPs`, and other settings from the database.
+
+### Full Configuration
+
 See [configs/config.example.json](configs/config.example.json) for a complete example.
 
 | Section | Key | Description |
