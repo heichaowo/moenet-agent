@@ -17,6 +17,7 @@ import (
 	"github.com/moenet/moenet-agent/internal/config"
 	"github.com/moenet/moenet-agent/internal/maintenance"
 	"github.com/moenet/moenet-agent/internal/task"
+	"github.com/moenet/moenet-agent/internal/updater"
 	"github.com/moenet/moenet-agent/internal/wireguard"
 )
 
@@ -122,6 +123,23 @@ func main() {
 	var wg sync.WaitGroup
 	taskCount := 6
 
+	// Initialize auto-updater if enabled
+	var agentUpdater *updater.Updater
+	if cfg.AutoUpdate.Enabled {
+		taskCount++
+		agentUpdater = updater.New(
+			Version,
+			os.Args[0],
+			updater.Config{
+				Enabled:       cfg.AutoUpdate.Enabled,
+				CheckInterval: cfg.AutoUpdate.CheckInterval,
+				Channel:       cfg.AutoUpdate.Channel,
+			},
+			cfg.AutoUpdate.GitHubRepo,
+		)
+		log.Printf("[Updater] Auto-update enabled, checking every %d minutes", cfg.AutoUpdate.CheckInterval)
+	}
+
 	wg.Add(taskCount)
 	go heartbeat.Run(ctx, &wg, Version)
 	go sessionSync.Run(ctx, &wg)
@@ -129,6 +147,9 @@ func main() {
 	go rttMeasurement.Run(ctx, &wg)
 	go meshSync.Run(ctx, &wg)
 	go ibgpSync.Run(ctx, &wg)
+	if agentUpdater != nil {
+		go agentUpdater.Run(ctx, &wg)
+	}
 
 	// Set up signal handling
 	sigChan := make(chan os.Signal, 1)

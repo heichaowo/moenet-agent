@@ -43,5 +43,11 @@
         "pingTimeout": 5,
         "pingCount": 4,
         "pingWorkers": 32
+    },
+    "autoUpdate": {
+        "enabled": true,
+        "checkInterval": 60,
+        "channel": "stable",
+        "githubRepo": "heichaowo/moenet-agent"
     }
 }

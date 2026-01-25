@@ -14,6 +14,7 @@ type Config struct {
 	Bird         BirdConfig         `json:"bird"`
 	WireGuard    WireGuardConfig    `json:"wireguard"`
 	Metric       MetricConfig       `json:"metric"`
+	AutoUpdate   AutoUpdateConfig   `json:"autoUpdate"`
 }
 
 // ServerConfig contains HTTP server settings
@@ -72,6 +73,14 @@ type MetricConfig struct {
 	PingTimeout int `json:"pingTimeout"`
 	PingCount   int `json:"pingCount"`
 	PingWorkers int `json:"pingWorkers"`
+}
+
+// AutoUpdateConfig contains self-update settings
+type AutoUpdateConfig struct {
+	Enabled       bool   `json:"enabled"`
+	CheckInterval int    `json:"checkInterval"` // minutes
+	Channel       string `json:"channel"`       // stable / beta
+	GitHubRepo    string `json:"githubRepo"`
 }
 
 // Load loads configuration from a JSON file
@@ -137,6 +146,17 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Metric.PingWorkers == 0 {
 		cfg.Metric.PingWorkers = 32
+	}
+
+	// AutoUpdate defaults
+	if cfg.AutoUpdate.CheckInterval == 0 {
+		cfg.AutoUpdate.CheckInterval = 60 // 1 hour
+	}
+	if cfg.AutoUpdate.Channel == "" {
+		cfg.AutoUpdate.Channel = "stable"
+	}
+	if cfg.AutoUpdate.GitHubRepo == "" {
+		cfg.AutoUpdate.GitHubRepo = "heichaowo/moenet-agent"
 	}
 
 	return &cfg, nil
