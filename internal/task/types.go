@@ -121,13 +121,14 @@ type MeshConfig struct {
 
 // HeartbeatPayload represents the heartbeat data sent to CP
 type HeartbeatPayload struct {
-	Version   string `json:"version"`
-	Kernel    string `json:"kernel"`
-	LoadAvg   string `json:"loadAvg"`
-	Uptime    int64  `json:"uptime"`
-	Timestamp int64  `json:"timestamp"`
-	TxBytes   uint64 `json:"tx"`
-	RxBytes   uint64 `json:"rx"`
-	TCPConns  int    `json:"tcp"`
-	UDPConns  int    `json:"udp"`
+	Version       string `json:"version"`
+	Kernel        string `json:"kernel"`
+	LoadAvg       string `json:"loadAvg"`
+	Uptime        int64  `json:"uptime"`
+	Timestamp     int64  `json:"timestamp"`
+	TxBytes       uint64 `json:"tx"`
+	RxBytes       uint64 `json:"rx"`
+	TCPConns      int    `json:"tcp"`
+	UDPConns      int    `json:"udp"`
+	MeshPublicKey string `json:"meshPublicKey,omitempty"`
 }

@@ -72,15 +72,16 @@ func (h *Heartbeat) Run(ctx context.Context, wg *sync.WaitGroup, version string)
 // sendHeartbeat sends health metrics to Control Plane
 func (h *Heartbeat) sendHeartbeat(ctx context.Context, version string) error {
 	payload := HeartbeatPayload{
-		Version:   version,
-		Kernel:    h.kernel,
-		LoadAvg:   h.getLoadAvg(),
-		Uptime:    h.getUptime(),
-		Timestamp: time.Now().Unix(),
-		TxBytes:   h.getTxBytes(),
-		RxBytes:   h.getRxBytes(),
-		TCPConns:  h.getTCPConns(),
-		UDPConns:  h.getUDPConns(),
+		Version:       version,
+		Kernel:        h.kernel,
+		LoadAvg:       h.getLoadAvg(),
+		Uptime:        h.getUptime(),
+		Timestamp:     time.Now().Unix(),
+		TxBytes:       h.getTxBytes(),
+		RxBytes:       h.getRxBytes(),
+		TCPConns:      h.getTCPConns(),
+		UDPConns:      h.getUDPConns(),
+		MeshPublicKey: h.getMeshPublicKey(),
 	}
 
 	body, err := json.Marshal(map[string]interface{}{
@@ -217,4 +218,14 @@ func (h *Heartbeat) countConnections(path string) int {
 		}
 	}
 	return count
+}
+
+// getMeshPublicKey reads the WireGuard mesh public key
+func (h *Heartbeat) getMeshPublicKey() string {
+	// Try /etc/wireguard/public.key first
+	data, err := os.ReadFile("/etc/wireguard/public.key")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
