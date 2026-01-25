@@ -21,8 +21,9 @@ type MeshSync struct {
 	httpClient *http.Client
 	wgExecutor *wireguard.Executor
 
-	mu    sync.RWMutex
-	peers map[int]*MeshPeer // key: node ID
+	mu             sync.RWMutex
+	peers          map[int]*MeshPeer // key: node ID
+	onPeersUpdated func(map[int]*MeshPeer)
 }
 
 // NewMeshSync creates a new mesh sync handler
@@ -35,6 +36,11 @@ func NewMeshSync(cfg *config.Config, wgExecutor *wireguard.Executor) *MeshSync {
 		wgExecutor: wgExecutor,
 		peers:      make(map[int]*MeshPeer),
 	}
+}
+
+// SetOnPeersUpdated sets a callback that's invoked when mesh peers are updated
+func (m *MeshSync) SetOnPeersUpdated(callback func(map[int]*MeshPeer)) {
+	m.onPeersUpdated = callback
 }
 
 // Run starts the mesh sync task
@@ -107,6 +113,11 @@ func (m *MeshSync) Sync(ctx context.Context) error {
 	m.mu.Lock()
 	m.peers = newPeers
 	m.mu.Unlock()
+
+	// Notify RTT of updated peers
+	if m.onPeersUpdated != nil {
+		m.onPeersUpdated(newPeers)
+	}
 
 	// Report status to CP (non-blocking)
 	if len(peerStatus) > 0 {

@@ -119,6 +119,9 @@ func main() {
 	}
 	rttMeasurement := task.NewRTTMeasurement(cfg)
 
+	// Connect MeshSync to RTT so RTT can use mesh peer loopback IPs
+	meshSync.SetOnPeersUpdated(rttMeasurement.UpdateMeshPeers)
+
 	// Create WaitGroup for background tasks
 	var wg sync.WaitGroup
 	taskCount := 6
