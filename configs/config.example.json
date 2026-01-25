@@ -18,7 +18,9 @@
         "requestTimeout": 15,
         "heartbeatInterval": 30,
         "syncInterval": 60,
-        "metricInterval": 60
+        "metricInterval": 60,
+        "maxRetries": 3,
+        "retryInitialDelay": 1000
     },
     "bird": {
         "controlSocket": "/var/run/bird/bird.ctl",

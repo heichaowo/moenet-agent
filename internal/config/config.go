@@ -41,6 +41,9 @@ type ControlPlaneConfig struct {
 	HeartbeatInterval int    `json:"heartbeatInterval"`
 	SyncInterval      int    `json:"syncInterval"`
 	MetricInterval    int    `json:"metricInterval"`
+	// Retry settings
+	MaxRetries        int `json:"maxRetries"`
+	RetryInitialDelay int `json:"retryInitialDelay"` // milliseconds
 }
 
 // BirdConfig contains BIRD integration settings
@@ -107,6 +110,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.ControlPlane.MetricInterval == 0 {
 		cfg.ControlPlane.MetricInterval = 60
+	}
+	if cfg.ControlPlane.MaxRetries == 0 {
+		cfg.ControlPlane.MaxRetries = 3
+	}
+	if cfg.ControlPlane.RetryInitialDelay == 0 {
+		cfg.ControlPlane.RetryInitialDelay = 1000 // 1 second
 	}
 	if cfg.Bird.ControlSocket == "" {
 		cfg.Bird.ControlSocket = "/var/run/bird/bird.ctl"

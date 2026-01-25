@@ -138,6 +138,68 @@ go test ./...
 go build -ldflags="-X main.Version=1.0.0 -X main.Commit=$(git rev-parse --short HEAD)" ./cmd/moenet-agent
 ```
 
+## Robustness Features
+
+### HTTP Retry with Backoff
+
+All Control Plane HTTP requests use exponential backoff retry:
+
+```go
+import "github.com/moenet/moenet-agent/internal/httpclient"
+
+client := httpclient.New(nil, httpclient.RetryConfig{
+    MaxRetries:   3,
+    InitialDelay: time.Second,
+    MaxDelay:     30 * time.Second,
+    Multiplier:   2.0,
+})
+
+resp, err := client.Get(ctx, url)
+```
+
+Features:
+
+- Configurable max retries and delays
+- Jitter to prevent thundering herd
+- Context-aware cancellation
+- Automatic 5xx and 429 retry
+
+### Circuit Breaker
+
+Prevents cascading failures when Control Plane is unavailable:
+
+```go
+import "github.com/moenet/moenet-agent/internal/circuitbreaker"
+
+cb := circuitbreaker.New(circuitbreaker.Config{
+    FailureThreshold: 5,
+    SuccessThreshold: 3,
+    OpenDuration:     30 * time.Second,
+})
+
+err := cb.Execute(func() error {
+    return sendRequest()
+})
+```
+
+State transitions:
+
+- **Closed** → **Open**: After 5 consecutive failures
+- **Open** → **Half-Open**: After 30s timeout
+- **Half-Open** → **Closed**: After 3 successes
+- **Half-Open** → **Open**: On any failure
+
+Configuration in `config.json`:
+
+```json
+{
+  "controlPlane": {
+    "maxRetries": 3,
+    "retryInitialDelay": 1000
+  }
+}
+```
+
 ## License
 
 GPL-3.0
