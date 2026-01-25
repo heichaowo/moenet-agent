@@ -11,13 +11,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/moenet/moenet-agent/internal/bird"
 	"github.com/moenet/moenet-agent/internal/config"
+	"github.com/moenet/moenet-agent/internal/wireguard"
 )
 
 // SessionSync handles synchronization of BGP sessions with Control Plane
 type SessionSync struct {
 	config     *config.Config
 	httpClient *http.Client
+	birdPool   *bird.Pool
+	birdConfig *bird.ConfigGenerator
+	wgExecutor *wireguard.Executor
 
 	// Local session state
 	mu       sync.RWMutex
@@ -25,13 +30,16 @@ type SessionSync struct {
 }
 
 // NewSessionSync creates a new session sync handler
-func NewSessionSync(cfg *config.Config) *SessionSync {
+func NewSessionSync(cfg *config.Config, birdPool *bird.Pool, birdConfig *bird.ConfigGenerator, wgExecutor *wireguard.Executor) *SessionSync {
 	return &SessionSync{
 		config: cfg,
 		httpClient: &http.Client{
 			Timeout: time.Duration(cfg.ControlPlane.RequestTimeout) * time.Second,
 		},
-		sessions: make(map[string]*BgpSession),
+		birdPool:   birdPool,
+		birdConfig: birdConfig,
+		wgExecutor: wgExecutor,
+		sessions:   make(map[string]*BgpSession),
 	}
 }
 
@@ -163,13 +171,61 @@ func (s *SessionSync) setupSession(ctx context.Context, session *BgpSession) err
 	log.Printf("[SessionSync] Setting up session AS%d (%s)", session.ASN, session.Name)
 
 	// 1. Create WireGuard interface
-	// TODO: Call wireguard.CreateInterface()
+	if session.Type == "wireguard" && session.Credential != "" {
+		// Build allowed IPs from session addresses
+		allowedIPs := []string{}
+		if session.IPv4 != "" {
+			allowedIPs = append(allowedIPs, session.IPv4+"/32")
+		}
+		if session.IPv6 != "" {
+			allowedIPs = append(allowedIPs, session.IPv6+"/128")
+		}
+		if session.IPv6LinkLocal != "" {
+			allowedIPs = append(allowedIPs, session.IPv6LinkLocal+"/128")
+		}
 
-	// 2. Generate BIRD configuration from template
-	// TODO: Call bird.GenerateConfig()
+		if err := s.wgExecutor.CreateInterface(
+			session.Interface,
+			0,                  // Listen port (0 = allocate automatically)
+			session.Credential, // Peer public key
+			session.Endpoint,
+			allowedIPs,
+			25, // Keepalive
+		); err != nil {
+			return fmt.Errorf("failed to create WireGuard interface: %w", err)
+		}
+
+		// Set MTU
+		mtu := session.MTU
+		if mtu == 0 {
+			mtu = 1420
+		}
+		if err := s.wgExecutor.SetMTU(session.Interface, mtu); err != nil {
+			log.Printf("[SessionSync] Warning: failed to set MTU: %v", err)
+		}
+	}
+
+	// 2. Generate BIRD configuration
+	cfg := &bird.SessionConfig{
+		Name:          fmt.Sprintf("dn42_%d", session.ASN),
+		Description:   session.Name,
+		Interface:     session.Interface,
+		ASN:           session.ASN,
+		IPv4:          session.IPv4,
+		IPv6:          session.IPv6,
+		IPv6LinkLocal: session.IPv6LinkLocal,
+		Extensions:    session.Extensions,
+		Policy:        session.Policy,
+	}
+
+	if err := s.birdConfig.GenerateSession(cfg); err != nil {
+		return fmt.Errorf("failed to generate BIRD config: %w", err)
+	}
 
 	// 3. Reload BIRD
-	// TODO: Call bird.Configure()
+	if err := s.birdPool.Configure(); err != nil {
+		log.Printf("[SessionSync] Warning: BIRD reconfigure failed: %v", err)
+	}
 
 	// 4. Report success to CP
 	if err := s.reportStatus(ctx, session.UUID, "active", ""); err != nil {
@@ -192,13 +248,22 @@ func (s *SessionSync) deleteSession(ctx context.Context, session *BgpSession) er
 	log.Printf("[SessionSync] Deleting session AS%d (%s)", session.ASN, session.Name)
 
 	// 1. Remove BIRD configuration
-	// TODO: Call bird.RemovePeer()
+	peerName := fmt.Sprintf("dn42_%d", session.ASN)
+	if err := s.birdConfig.RemoveSession(peerName); err != nil {
+		log.Printf("[SessionSync] Warning: failed to remove BIRD config: %v", err)
+	}
 
 	// 2. Reload BIRD
-	// TODO: Call bird.Configure()
+	if err := s.birdPool.Configure(); err != nil {
+		log.Printf("[SessionSync] Warning: BIRD reconfigure failed: %v", err)
+	}
 
 	// 3. Remove WireGuard interface
-	// TODO: Call wireguard.DeleteInterface()
+	if session.Type == "wireguard" && session.Interface != "" {
+		if err := s.wgExecutor.DeleteInterface(session.Interface); err != nil {
+			log.Printf("[SessionSync] Warning: failed to delete WireGuard interface: %v", err)
+		}
+	}
 
 	// 4. Report deletion to CP
 	if err := s.reportStatus(ctx, session.UUID, "deleted", ""); err != nil {

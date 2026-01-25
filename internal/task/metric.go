@@ -8,9 +8,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/moenet/moenet-agent/internal/bird"
 	"github.com/moenet/moenet-agent/internal/config"
 )
 
@@ -18,19 +20,21 @@ import (
 type MetricCollector struct {
 	config     *config.Config
 	httpClient *http.Client
+	birdPool   *bird.Pool
 
 	mu      sync.RWMutex
 	metrics map[string]*SessionMetric // key: peer UUID
 }
 
 // NewMetricCollector creates a new metric collector
-func NewMetricCollector(cfg *config.Config) *MetricCollector {
+func NewMetricCollector(cfg *config.Config, birdPool *bird.Pool) *MetricCollector {
 	return &MetricCollector{
 		config: cfg,
 		httpClient: &http.Client{
 			Timeout: time.Duration(cfg.ControlPlane.RequestTimeout) * time.Second,
 		},
-		metrics: make(map[string]*SessionMetric),
+		birdPool: birdPool,
+		metrics:  make(map[string]*SessionMetric),
 	}
 }
 
@@ -56,7 +60,6 @@ func (m *MetricCollector) Run(ctx context.Context, wg *sync.WaitGroup) {
 // collectAndReport collects metrics and sends to CP
 func (m *MetricCollector) collectAndReport(ctx context.Context) error {
 	// Collect BGP statistics
-	// TODO: Query BIRD for protocol statistics
 	sessions := m.collectBGPStats()
 
 	if len(sessions) == 0 {
@@ -70,9 +73,46 @@ func (m *MetricCollector) collectAndReport(ctx context.Context) error {
 
 // collectBGPStats collects BGP protocol statistics from BIRD
 func (m *MetricCollector) collectBGPStats() []map[string]interface{} {
-	// TODO: Implement actual BIRD query
-	// For now, return empty slice
-	return []map[string]interface{}{}
+	output, err := m.birdPool.ShowProtocols()
+	if err != nil {
+		log.Printf("[Metric] Failed to get BIRD protocols: %v", err)
+		return nil
+	}
+
+	var sessions []map[string]interface{}
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		// Skip header and empty lines
+		if len(line) == 0 || strings.HasPrefix(line, "Name") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+
+		name := fields[0]
+		proto := fields[1]
+		state := fields[3]
+		info := ""
+		if len(fields) > 5 {
+			info = strings.Join(fields[5:], " ")
+		}
+
+		// Only report DN42 eBGP sessions
+		if proto == "BGP" && strings.HasPrefix(name, "dn42_") {
+			sessions = append(sessions, map[string]interface{}{
+				"name":  name,
+				"type":  "bgp",
+				"state": state,
+				"info":  info,
+			})
+		}
+	}
+
+	return sessions
 }
 
 // reportMetrics sends metrics to Control Plane

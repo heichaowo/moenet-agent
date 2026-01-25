@@ -12,8 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/moenet/moenet-agent/internal/api"
 	"github.com/moenet/moenet-agent/internal/bird"
 	"github.com/moenet/moenet-agent/internal/config"
+	"github.com/moenet/moenet-agent/internal/maintenance"
+	"github.com/moenet/moenet-agent/internal/task"
+	"github.com/moenet/moenet-agent/internal/wireguard"
 )
 
 // Build-time variables (set by -ldflags)
@@ -62,16 +66,37 @@ func main() {
 	}
 	defer birdPool.Close()
 
+	// Initialize BIRD config generator
+	birdConfig, err := bird.NewConfigGenerator(cfg.Bird.PeerConfDir)
+	if err != nil {
+		log.Fatalf("Failed to initialize BIRD config generator: %v", err)
+	}
+
+	// Initialize WireGuard executor
+	wgExecutor, err := wireguard.NewExecutor(cfg.WireGuard.ConfigDir, cfg.WireGuard.PrivateKeyPath)
+	if err != nil {
+		log.Fatalf("Failed to initialize WireGuard executor: %v", err)
+	}
+
 	// Log startup
 	log.Printf("%s %s starting...\n", serverSignature, Version)
 	log.Printf("  Node: %s\n", cfg.Node.Name)
 	log.Printf("  Control Plane: %s\n", cfg.ControlPlane.URL)
 	log.Printf("  Listen: %s\n", cfg.Server.Listen)
 
+	// Initialize maintenance state
+	maintenanceState := maintenance.NewState(birdPool)
+
+	// Create API handler
+	apiHandler := api.NewHandler(Version, maintenanceState)
+
 	// Set up HTTP server
 	mux := http.NewServeMux()
-	mux.HandleFunc("/status", handleStatus)
+	mux.HandleFunc("/status", apiHandler.HandleStatus)
 	mux.HandleFunc("/sync", handleSync)
+	mux.HandleFunc("/maintenance", apiHandler.HandleMaintenance)
+	mux.HandleFunc("/maintenance/start", apiHandler.HandleMaintenanceStart)
+	mux.HandleFunc("/maintenance/stop", apiHandler.HandleMaintenanceStop)
 
 	server := &http.Server{
 		Addr:         cfg.Server.Listen,
@@ -81,17 +106,28 @@ func main() {
 		IdleTimeout:  time.Duration(cfg.Server.IdleTimeout) * time.Second,
 	}
 
+	// Create background tasks
+	heartbeat := task.NewHeartbeat(cfg)
+	sessionSync := task.NewSessionSync(cfg, birdPool, birdConfig, wgExecutor)
+	metricCollector := task.NewMetricCollector(cfg, birdPool)
+	meshSync := task.NewMeshSync(cfg, wgExecutor)
+	ibgpSync, err := task.NewIBGPSync(cfg, birdPool)
+	if err != nil {
+		log.Fatalf("Failed to initialize iBGP sync: %v", err)
+	}
+	rttMeasurement := task.NewRTTMeasurement(cfg)
+
 	// Create WaitGroup for background tasks
 	var wg sync.WaitGroup
 	taskCount := 6
 
 	wg.Add(taskCount)
-	go heartbeatTask(ctx, &wg)
-	go sessionSyncTask(ctx, &wg)
-	go metricTask(ctx, &wg)
-	go rttTask(ctx, &wg)
-	go meshSyncTask(ctx, &wg)
-	go ibgpSyncTask(ctx, &wg)
+	go heartbeat.Run(ctx, &wg, Version)
+	go sessionSync.Run(ctx, &wg)
+	go metricCollector.Run(ctx, &wg)
+	go rttMeasurement.Run(ctx, &wg)
+	go meshSync.Run(ctx, &wg)
+	go ibgpSync.Run(ctx, &wg)
 
 	// Set up signal handling
 	sigChan := make(chan os.Signal, 1)
@@ -142,125 +178,8 @@ func main() {
 	log.Printf("%s stopped\n", serverSignature)
 }
 
-// Placeholder handlers
-func handleStatus(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"status":"ok","version":"%s"}`, Version)
-}
-
+// handleSync handles sync requests (placeholder)
 func handleSync(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, `{"status":"sync_triggered"}`)
-}
-
-// Placeholder background tasks
-func heartbeatTask(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
-	ticker := time.NewTicker(time.Duration(cfg.ControlPlane.HeartbeatInterval) * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("[Heartbeat] Task stopped")
-			return
-		case <-ticker.C:
-			log.Println("[Heartbeat] Sending heartbeat...")
-			// TODO: Implement heartbeat
-		}
-	}
-}
-
-func sessionSyncTask(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
-	ticker := time.NewTicker(time.Duration(cfg.ControlPlane.SyncInterval) * time.Second)
-	defer ticker.Stop()
-
-	// Initial sync
-	log.Println("[SessionSync] Initial sync...")
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("[SessionSync] Task stopped")
-			return
-		case <-ticker.C:
-			log.Println("[SessionSync] Syncing sessions...")
-			// TODO: Implement session sync
-		}
-	}
-}
-
-func metricTask(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
-	ticker := time.NewTicker(time.Duration(cfg.ControlPlane.MetricInterval) * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("[Metric] Task stopped")
-			return
-		case <-ticker.C:
-			log.Println("[Metric] Collecting metrics...")
-			// TODO: Implement metric collection
-		}
-	}
-}
-
-func rttTask(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
-	ticker := time.NewTicker(300 * time.Second) // 5 minutes
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("[RTT] Task stopped")
-			return
-		case <-ticker.C:
-			log.Println("[RTT] Measuring RTT...")
-			// TODO: Implement RTT measurement
-		}
-	}
-}
-
-func meshSyncTask(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
-	ticker := time.NewTicker(120 * time.Second) // 2 minutes
-	defer ticker.Stop()
-
-	// Initial sync
-	log.Println("[MeshSync] Initial sync...")
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("[MeshSync] Task stopped")
-			return
-		case <-ticker.C:
-			log.Println("[MeshSync] Syncing mesh...")
-			// TODO: Implement mesh sync
-		}
-	}
-}
-
-func ibgpSyncTask(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
-	ticker := time.NewTicker(120 * time.Second) // 2 minutes
-	defer ticker.Stop()
-
-	// Initial sync
-	log.Println("[iBGP] Initial sync...")
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("[iBGP] Task stopped")
-			return
-		case <-ticker.C:
-			log.Println("[iBGP] Syncing iBGP peers...")
-			// TODO: Implement iBGP sync
-		}
-	}
 }
