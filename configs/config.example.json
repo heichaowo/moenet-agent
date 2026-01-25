@@ -1,19 +1,21 @@
 {
+    "_comment": "Full config example. For Bootstrap mode, only bootstrap + server sections needed.",
     "server": {
-        "listen": ":8080",
+        "listen": ":24368",
         "readTimeout": 30,
         "writeTimeout": 30,
         "idleTimeout": 120
     },
     "node": {
-        "name": "hk-edge",
-        "id": 1,
-        "region": "as-e",
-        "location": "Hong Kong",
-        "provider": "example"
+        "_comment": "Dynamic: fetched from CP in Bootstrap mode",
+        "name": "example-node",
+        "id": 0,
+        "region": "",
+        "location": "",
+        "provider": ""
     },
     "controlPlane": {
-        "url": "https://cp.moenet.example.com",
+        "url": "https://api.moenet.work",
         "token": "your-agent-token-here",
         "requestTimeout": 15,
         "heartbeatInterval": 30,
@@ -23,11 +25,11 @@
         "retryInitialDelay": 1000
     },
     "bird": {
-        "controlSocket": "/var/run/bird/bird.ctl",
+        "controlSocket": "/var/run/bird/run/bird.ctl",
         "poolSize": 5,
         "poolSizeMax": 64,
         "peerConfDir": "/etc/bird/peers",
-        "ebgpConfTemplateFile": "./templates/ebgp.conf.tmpl",
+        "ebgpConfTemplateFile": "/opt/moenet-agent/templates/ebgp.conf.tmpl",
         "ibgpConfDir": "/etc/bird/ibgp.d"
     },
     "wireguard": {
@@ -35,8 +37,9 @@
         "publicKeyPath": "/etc/wireguard/publickey",
         "configDir": "/etc/wireguard",
         "persistentKeepaliveInterval": 25,
-        "dn42Ipv4": "172.22.188.1",
-        "dn42Ipv6": "fd00:4242:7777::1",
+        "_comment": "Dynamic: dn42Ipv4/Ipv6 fetched from CP routers table",
+        "dn42Ipv4": "",
+        "dn42Ipv6": "",
         "dn42Ipv6LinkLocal": "fe80::1"
     },
     "metric": {
