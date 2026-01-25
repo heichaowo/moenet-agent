@@ -141,10 +141,16 @@ func (p *Pool) Configure() error {
 	if err != nil {
 		return err
 	}
-	if !strings.Contains(result, "Reconfigured") && !strings.Contains(result, "Reconfiguration in progress") {
-		return fmt.Errorf("configure failed: %s", result)
+	// BIRD 3.x may include info lines. Check for success indicators:
+	// - "Reconfigured" or "Reconfiguration in progress" in text
+	// - Response code 0003 (success) or 0018 (restart in progress)
+	if strings.Contains(result, "Reconfigured") ||
+		strings.Contains(result, "Reconfiguration in progress") ||
+		strings.Contains(result, "0003 ") ||
+		strings.Contains(result, "0018 ") {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("configure failed: %s", result)
 }
 
 // ShowProtocols returns the output of 'show protocols'
