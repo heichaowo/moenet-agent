@@ -188,6 +188,8 @@ func (m *MeshSync) removeMeshTunnel(peer *MeshPeer) {
 }
 
 // reportMeshStatus reports mesh tunnel status to CP
+//
+//nolint:unused // Reserved for future use
 func (m *MeshSync) reportMeshStatus(ctx context.Context, status map[int]string) error {
 	url := fmt.Sprintf("%s/api/v1/agent/%s/mesh/status", m.config.ControlPlane.URL, m.config.Node.Name)
 

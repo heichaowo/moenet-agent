@@ -162,6 +162,8 @@ func (i *IBGPSync) configUnchanged(peer *MeshPeer, filename string) bool {
 }
 
 // removePeerConfig removes the iBGP config for a peer
+//
+//nolint:unused // Reserved for future use
 func (i *IBGPSync) removePeerConfig(nodeID int) error {
 	filename := filepath.Join(i.ibgpConfDir, fmt.Sprintf("ibgp_%d.conf", nodeID))
 	if err := os.Remove(filename); err != nil && !os.IsNotExist(err) {
@@ -196,6 +198,8 @@ protocol bgp ibgp_{{.NodeID}} from ibgp_peers {
 `
 
 // cleanupStaleConfigs removes configs for peers that no longer exist
+//
+//nolint:unused // Reserved for future use
 func (i *IBGPSync) cleanupStaleConfigs(currentPeers map[int]*MeshPeer) error {
 	files, err := os.ReadDir(i.ibgpConfDir)
 	if err != nil {
