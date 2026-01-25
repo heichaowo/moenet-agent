@@ -91,6 +91,9 @@ func main() {
 	// Create API handler
 	apiHandler := api.NewHandler(Version, maintenanceState)
 
+	// Create restart handler
+	restartHandler := api.NewRestartHandler(birdPool, wgExecutor)
+
 	// Set up HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", apiHandler.HandleStatus)
@@ -99,6 +102,7 @@ func main() {
 	mux.HandleFunc("/maintenance", apiHandler.HandleMaintenance)
 	mux.HandleFunc("/maintenance/start", apiHandler.HandleMaintenanceStart)
 	mux.HandleFunc("/maintenance/stop", apiHandler.HandleMaintenanceStop)
+	mux.HandleFunc("/restart", restartHandler.HandleRestart)
 
 	server := &http.Server{
 		Addr:         cfg.Server.Listen,
