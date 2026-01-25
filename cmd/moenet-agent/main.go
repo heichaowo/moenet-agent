@@ -94,6 +94,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", apiHandler.HandleStatus)
 	mux.HandleFunc("/sync", handleSync)
+	mux.HandleFunc("/metrics", apiHandler.HandleMetrics)
 	mux.HandleFunc("/maintenance", apiHandler.HandleMaintenance)
 	mux.HandleFunc("/maintenance/start", apiHandler.HandleMaintenanceStart)
 	mux.HandleFunc("/maintenance/stop", apiHandler.HandleMaintenanceStop)
