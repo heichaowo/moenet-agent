@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/moenet/moenet-agent/internal/maintenance"
+	"github.com/moenet/moenet-agent/internal/metrics"
 )
 
 // Handler holds the dependencies for API handlers.
@@ -118,4 +119,11 @@ func (h *Handler) HandleMaintenanceStop(w http.ResponseWriter, r *http.Request) 
 	}
 
 	json.NewEncoder(w).Encode(resp)
+}
+
+// HandleMetrics handles GET /metrics (Prometheus format)
+func (h *Handler) HandleMetrics(w http.ResponseWriter, r *http.Request) {
+	m := metrics.Get()
+	m.SetVersion(h.Version)
+	m.Handler()(w, r)
 }
