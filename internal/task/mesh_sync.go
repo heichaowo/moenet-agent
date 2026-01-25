@@ -71,8 +71,10 @@ func (m *MeshSync) Sync(ctx context.Context) error {
 
 	log.Printf("[MeshSync] Received %d peers from CP", len(meshConfig.Peers))
 
-	// Build new peer map
+	// Build new peer map and track status
 	newPeers := make(map[int]*MeshPeer)
+	peerStatus := make(map[int]string)
+
 	for i := range meshConfig.Peers {
 		peer := &meshConfig.Peers[i]
 		newPeers[peer.NodeID] = peer
@@ -85,6 +87,9 @@ func (m *MeshSync) Sync(ctx context.Context) error {
 		// Create or update mesh tunnel
 		if err := m.ensureMeshTunnel(peer); err != nil {
 			log.Printf("[MeshSync] Failed to configure tunnel to %s: %v", peer.NodeName, err)
+			peerStatus[peer.NodeID] = fmt.Sprintf("error: %v", err)
+		} else {
+			peerStatus[peer.NodeID] = "configured"
 		}
 	}
 
@@ -102,6 +107,15 @@ func (m *MeshSync) Sync(ctx context.Context) error {
 	m.mu.Lock()
 	m.peers = newPeers
 	m.mu.Unlock()
+
+	// Report status to CP (non-blocking)
+	if len(peerStatus) > 0 {
+		go func() {
+			if err := m.reportMeshStatus(ctx, peerStatus); err != nil {
+				log.Printf("[MeshSync] Failed to report status: %v", err)
+			}
+		}()
+	}
 
 	return nil
 }
@@ -188,8 +202,6 @@ func (m *MeshSync) removeMeshTunnel(peer *MeshPeer) {
 }
 
 // reportMeshStatus reports mesh tunnel status to CP
-//
-//nolint:unused // Reserved for future use
 func (m *MeshSync) reportMeshStatus(ctx context.Context, status map[int]string) error {
 	url := fmt.Sprintf("%s/api/v1/agent/%s/mesh/status", m.config.ControlPlane.URL, m.config.Node.Name)
 
