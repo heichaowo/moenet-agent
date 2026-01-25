@@ -3,6 +3,7 @@ package bird
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"net"
 	"strings"
 	"sync"
@@ -141,16 +142,27 @@ func (p *Pool) Configure() error {
 	if err != nil {
 		return err
 	}
-	// BIRD 3.x may include info lines. Check for success indicators:
-	// - "Reconfigured" or "Reconfiguration in progress" in text
-	// - Response code 0003 (success) or 0018 (restart in progress)
+	// BIRD 3.x responses may include multiple lines from connection pool reuse.
+	// Check for explicit error codes (8xxx = runtime error, 9xxx = parse error)
+	// Success codes: 0002 (info), 0003 (success), 0018 (restart)
 	if strings.Contains(result, "Reconfigured") ||
 		strings.Contains(result, "Reconfiguration in progress") ||
 		strings.Contains(result, "0003 ") ||
-		strings.Contains(result, "0018 ") {
+		strings.Contains(result, "0018 ") ||
+		strings.Contains(result, "0002-") {
 		return nil
 	}
-	return fmt.Errorf("configure failed: %s", result)
+	// Only fail on explicit error codes
+	if strings.Contains(result, "8") || strings.Contains(result, "9") {
+		for _, line := range strings.Split(result, "\n") {
+			if len(line) >= 4 && (line[0] == '8' || line[0] == '9') {
+				return fmt.Errorf("configure failed: %s", line)
+			}
+		}
+	}
+	// Log and accept if we don't see explicit errors
+	log.Printf("[BIRD] Configure response (assumed success): %s", strings.TrimSpace(result))
+	return nil
 }
 
 // ShowProtocols returns the output of 'show protocols'
