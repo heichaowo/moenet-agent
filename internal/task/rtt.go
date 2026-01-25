@@ -1,10 +1,13 @@
 package task
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -13,25 +16,48 @@ import (
 
 // RTTMeasurement handles latency measurements to other nodes
 type RTTMeasurement struct {
-	config  *config.Config
-	results map[string]*RTTResult
-	mu      sync.RWMutex
+	config      *config.Config
+	httpClient  *http.Client
+	results     map[string]*RTTResult
+	meshTargets []string // loopback IPs from mesh peers
+	mu          sync.RWMutex
 }
 
 // RTTResult stores RTT measurement results
 type RTTResult struct {
 	Target    string    `json:"target"`
 	RTTMs     float64   `json:"rtt_ms"`
-	Loss      float64   `json:"loss_percent"`
+	Loss      float64   `json:"loss"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
 // NewRTTMeasurement creates a new RTT measurement handler
 func NewRTTMeasurement(cfg *config.Config) *RTTMeasurement {
 	return &RTTMeasurement{
-		config:  cfg,
-		results: make(map[string]*RTTResult),
+		config: cfg,
+		httpClient: &http.Client{
+			Timeout: time.Duration(cfg.ControlPlane.RequestTimeout) * time.Second,
+		},
+		results:     make(map[string]*RTTResult),
+		meshTargets: []string{},
 	}
+}
+
+// UpdateMeshPeers updates the list of mesh peer targets for RTT measurement
+func (r *RTTMeasurement) UpdateMeshPeers(peers map[int]*MeshPeer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.meshTargets = make([]string, 0, len(peers))
+	for _, peer := range peers {
+		// Prefer IPv6 loopback, fall back to IPv4
+		if peer.LoopbackIPv6 != "" {
+			r.meshTargets = append(r.meshTargets, peer.LoopbackIPv6)
+		} else if peer.LoopbackIPv4 != "" {
+			r.meshTargets = append(r.meshTargets, peer.LoopbackIPv4)
+		}
+	}
+	log.Printf("[RTT] Updated %d mesh peer targets", len(r.meshTargets))
 }
 
 // Run starts the RTT measurement task
@@ -57,13 +83,24 @@ func (r *RTTMeasurement) Run(ctx context.Context, wg *sync.WaitGroup) {
 
 // measureAll measures RTT to all known targets
 func (r *RTTMeasurement) measureAll(ctx context.Context) {
-	// For now, we measure RTT to common endpoints
-	// In production, this would use mesh peer IPs
-	targets := []string{
-		"8.8.8.8",         // Google DNS
-		"1.1.1.1",         // Cloudflare DNS
-		"172.20.0.53",     // DN42 anycast DNS
-		"fd42:d42:d42::1", // DN42 anycast DNS v6
+	r.mu.RLock()
+	meshCount := len(r.meshTargets)
+	r.mu.RUnlock()
+
+	var targets []string
+
+	if meshCount > 0 {
+		// Use mesh peer loopback IPs
+		r.mu.RLock()
+		targets = make([]string, len(r.meshTargets))
+		copy(targets, r.meshTargets)
+		r.mu.RUnlock()
+	} else {
+		// Fallback to default targets when no mesh peers available
+		targets = []string{
+			"172.20.0.53",     // DN42 anycast DNS
+			"fd42:d42:d42::1", // DN42 anycast DNS v6
+		}
 	}
 
 	var wg sync.WaitGroup
@@ -81,7 +118,12 @@ func (r *RTTMeasurement) measureAll(ctx context.Context) {
 	}
 	wg.Wait()
 
-	log.Printf("[RTT] Measured %d targets", len(r.results))
+	log.Printf("[RTT] Measured %d targets (mesh=%d)", len(r.results), meshCount)
+
+	// Report results to Control Plane
+	if err := r.reportResults(ctx); err != nil {
+		log.Printf("[RTT] Failed to report results: %v", err)
+	}
 }
 
 // measure performs RTT measurement to a single target
@@ -161,4 +203,53 @@ func (r *RTTMeasurement) GetResults() map[string]*RTTResult {
 		results[k] = v
 	}
 	return results
+}
+
+// reportResults sends RTT measurements to Control Plane
+func (r *RTTMeasurement) reportResults(ctx context.Context) error {
+	r.mu.RLock()
+	measurements := make([]map[string]interface{}, 0, len(r.results))
+	for _, result := range r.results {
+		measurements = append(measurements, map[string]interface{}{
+			"target": result.Target,
+			"rtt_ms": result.RTTMs,
+			"loss":   result.Loss,
+		})
+	}
+	r.mu.RUnlock()
+
+	if len(measurements) == 0 {
+		return nil
+	}
+
+	url := fmt.Sprintf("%s/api/v1/agent/%s/rtt", r.config.ControlPlane.URL, r.config.Node.Name)
+
+	body, err := json.Marshal(map[string]interface{}{
+		"measurements": measurements,
+		"timestamp":    time.Now().Unix(),
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+r.config.ControlPlane.Token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("CP returned status %d", resp.StatusCode)
+	}
+
+	log.Printf("[RTT] Reported %d measurements to CP", len(measurements))
+	return nil
 }

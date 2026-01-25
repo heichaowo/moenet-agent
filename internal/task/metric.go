@@ -103,16 +103,59 @@ func (m *MetricCollector) collectBGPStats() []map[string]interface{} {
 
 		// Only report DN42 eBGP sessions
 		if proto == "BGP" && strings.HasPrefix(name, "dn42_") {
-			sessions = append(sessions, map[string]interface{}{
+			session := map[string]interface{}{
 				"name":  name,
 				"type":  "bgp",
 				"state": state,
 				"info":  info,
-			})
+			}
+
+			// Get route counts for this session
+			routeCounts := m.getSessionRouteCounts(name)
+			if routeCounts != nil {
+				session["routes_imported"] = routeCounts["imported"]
+				session["routes_exported"] = routeCounts["exported"]
+			}
+
+			sessions = append(sessions, session)
 		}
 	}
 
 	return sessions
+}
+
+// getSessionRouteCounts fetches route import/export counts for a specific protocol
+func (m *MetricCollector) getSessionRouteCounts(protocolName string) map[string]int {
+	output, err := m.birdPool.Execute(fmt.Sprintf("show protocols all %s", protocolName))
+	if err != nil {
+		return nil
+	}
+
+	imported := 0
+	exported := 0
+
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Look for "Routes:         X imported, Y exported"
+		if strings.HasPrefix(line, "Routes:") {
+			parts := strings.Split(line, ",")
+			for _, part := range parts {
+				part = strings.TrimSpace(part)
+				if strings.Contains(part, "imported") {
+					fmt.Sscanf(part, "Routes: %d imported", &imported)
+				} else if strings.Contains(part, "exported") {
+					fmt.Sscanf(part, "%d exported", &exported)
+				}
+			}
+			break
+		}
+	}
+
+	return map[string]int{
+		"imported": imported,
+		"exported": exported,
+	}
 }
 
 // reportMetrics sends metrics to Control Plane

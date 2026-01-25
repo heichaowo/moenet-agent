@@ -1,29 +1,51 @@
 // Package maintenance implements the maintenance mode functionality for the agent.
-// When in maintenance mode, the agent signals BIRD to gracefully shutdown all eBGP sessions.
+// When in maintenance mode, the agent sets BIRD's MAINTENANCE_MODE to true,
+// which triggers GRACEFUL_SHUTDOWN (RFC 8326) community on route exports.
 package maintenance
 
 import (
+	"fmt"
 	"log"
-	"strings"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/moenet/moenet-agent/internal/bird"
 )
 
+const (
+	// maintenanceConfPath is where BIRD looks for the MAINTENANCE_MODE variable
+	maintenanceConfPath = "/etc/bird/maintenance.conf"
+)
+
 // State represents the current maintenance state of the node.
 type State struct {
-	mu            sync.RWMutex
-	enabled       bool
-	enteredAt     time.Time
-	birdPool      *bird.Pool
-	disabledPeers []string // List of peers that were disabled
+	mu        sync.RWMutex
+	enabled   bool
+	enteredAt time.Time
+	birdPool  *bird.Pool
 }
 
 // NewState creates a new maintenance state manager.
 func NewState(birdPool *bird.Pool) *State {
-	return &State{
+	s := &State{
 		birdPool: birdPool,
+	}
+	// Read current state from file
+	s.readCurrentState()
+	return s
+}
+
+// readCurrentState reads the maintenance.conf file to determine current state
+func (s *State) readCurrentState() {
+	data, err := os.ReadFile(maintenanceConfPath)
+	if err != nil {
+		return
+	}
+	content := string(data)
+	if content == "define MAINTENANCE_MODE = true;\n" {
+		s.enabled = true
+		s.enteredAt = time.Now() // Approximate
 	}
 }
 
@@ -41,7 +63,9 @@ func (s *State) EnteredAt() time.Time {
 	return s.enteredAt
 }
 
-// Enter enables maintenance mode by gracefully shutting down all eBGP sessions.
+// Enter enables maintenance mode by setting MAINTENANCE_MODE = true in BIRD.
+// This causes BIRD to add GRACEFUL_SHUTDOWN community to all exported routes,
+// signaling peers to prefer alternative paths before this node goes down.
 func (s *State) Enter() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -50,33 +74,30 @@ func (s *State) Enter() error {
 		return nil // Already in maintenance mode
 	}
 
-	log.Println("[Maintenance] Entering maintenance mode...")
+	log.Println("[Maintenance] Entering maintenance mode (Graceful Shutdown)...")
 
-	// Get list of all eBGP peers
-	peers, err := s.getEBGPPeers()
-	if err != nil {
-		return err
+	// Write MAINTENANCE_MODE = true to config file
+	content := "define MAINTENANCE_MODE = true;\n"
+	if err := os.WriteFile(maintenanceConfPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write maintenance.conf: %w", err)
 	}
 
-	// Disable each peer
-	s.disabledPeers = make([]string, 0, len(peers))
-	for _, peer := range peers {
-		if err := s.disablePeer(peer); err != nil {
-			log.Printf("[Maintenance] Warning: failed to disable peer %s: %v", peer, err)
-			continue
-		}
-		s.disabledPeers = append(s.disabledPeers, peer)
-		log.Printf("[Maintenance] Disabled peer: %s", peer)
+	// Reconfigure BIRD to apply the change
+	if err := s.birdPool.Configure(); err != nil {
+		// Rollback
+		os.WriteFile(maintenanceConfPath, []byte("define MAINTENANCE_MODE = false;\n"), 0644)
+		return fmt.Errorf("failed to reconfigure BIRD: %w", err)
 	}
 
 	s.enabled = true
 	s.enteredAt = time.Now()
 
-	log.Printf("[Maintenance] Maintenance mode enabled, %d peers disabled", len(s.disabledPeers))
+	log.Println("[Maintenance] Maintenance mode enabled - GRACEFUL_SHUTDOWN community active")
 	return nil
 }
 
-// Exit disables maintenance mode by re-enabling all previously disabled eBGP sessions.
+// Exit disables maintenance mode by setting MAINTENANCE_MODE = false in BIRD.
+// This removes the GRACEFUL_SHUTDOWN community from exports, restoring normal routing.
 func (s *State) Exit() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -87,68 +108,21 @@ func (s *State) Exit() error {
 
 	log.Println("[Maintenance] Exiting maintenance mode...")
 
-	// Re-enable each previously disabled peer
-	for _, peer := range s.disabledPeers {
-		if err := s.enablePeer(peer); err != nil {
-			log.Printf("[Maintenance] Warning: failed to enable peer %s: %v", peer, err)
-			continue
-		}
-		log.Printf("[Maintenance] Enabled peer: %s", peer)
+	// Write MAINTENANCE_MODE = false to config file
+	content := "define MAINTENANCE_MODE = false;\n"
+	if err := os.WriteFile(maintenanceConfPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write maintenance.conf: %w", err)
+	}
+
+	// Reconfigure BIRD to apply the change
+	if err := s.birdPool.Configure(); err != nil {
+		log.Printf("[Maintenance] Warning: BIRD reconfigure failed: %v", err)
+		// Don't rollback - file is already written
 	}
 
 	s.enabled = false
 	s.enteredAt = time.Time{}
-	s.disabledPeers = nil
 
-	log.Println("[Maintenance] Maintenance mode disabled")
+	log.Println("[Maintenance] Maintenance mode disabled - normal routing restored")
 	return nil
-}
-
-// getEBGPPeers returns a list of all eBGP peer names (protocols starting with "dn42_").
-func (s *State) getEBGPPeers() ([]string, error) {
-	output, err := s.birdPool.ShowProtocols()
-	if err != nil {
-		return nil, err
-	}
-
-	return parseEBGPPeers(output), nil
-}
-
-// parseEBGPPeers extracts eBGP peer names from BIRD protocol output.
-func parseEBGPPeers(output string) []string {
-	var peers []string
-	lines := strings.Split(output, "\n")
-
-	for _, line := range lines {
-		// Skip header and empty lines
-		if len(line) == 0 || line[0] == ' ' || line[0] == '\t' {
-			continue
-		}
-
-		// Parse protocol name (first field)
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-
-		name := fields[0]
-		// eBGP peers start with "dn42_"
-		if strings.HasPrefix(name, "dn42_") {
-			peers = append(peers, name)
-		}
-	}
-
-	return peers
-}
-
-// disablePeer disables a BGP peer using BIRD.
-func (s *State) disablePeer(name string) error {
-	_, err := s.birdPool.Execute("disable " + name)
-	return err
-}
-
-// enablePeer enables a BGP peer using BIRD.
-func (s *State) enablePeer(name string) error {
-	_, err := s.birdPool.Execute("enable " + name)
-	return err
 }
