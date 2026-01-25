@@ -53,9 +53,9 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Load configuration
+	// Load configuration (supports bootstrap mode)
 	var err error
-	cfg, err = config.Load(*configFile)
+	cfg, err = config.LoadWithBootstrap(*configFile)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
