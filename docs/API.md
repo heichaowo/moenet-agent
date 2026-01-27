@@ -68,7 +68,7 @@ Fetch all BGP sessions for this router.
 
 **Headers:**
 
-```
+```http
 Authorization: Bearer <token>
 ```
 
@@ -180,14 +180,14 @@ Fetch full bootstrap configuration.
 
 All endpoints return standard HTTP status codes:
 
-| Code | Description |
-|------|-------------|
-| 200 | Success |
-| 400 | Bad request |
-| 401 | Unauthorized |
-| 404 | Not found |
-| 500 | Internal error |
-| 503 | Service unavailable |
+| Code | Description         |
+|------|---------------------|
+| 200  | Success             |
+| 400  | Bad request         |
+| 401  | Unauthorized        |
+| 404  | Not found           |
+| 500  | Internal error      |
+| 503  | Service unavailable |
 
 Error response format:
 

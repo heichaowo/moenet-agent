@@ -26,15 +26,15 @@ Minimal configuration that fetches settings from Control Plane at startup:
 
 ### What Bootstrap Fetches
 
-| Setting | Description |
-|---------|-------------|
-| `nodeId` | Unique node ID (1-62) |
-| `region` | Geographic region |
-| `loopbackIpv4` | DN42 loopback IPv4 |
-| `loopbackIpv6` | DN42 loopback IPv6 |
-| `asn` | Local ASN |
-| `meshPeers` | IGP mesh peer list |
-| `ibgpPeers` | iBGP peer list |
+| Setting        | Description            |
+|----------------|------------------------|
+| `nodeId`       | Unique node ID (1-62)  |
+| `region`       | Geographic region      |
+| `loopbackIpv4` | DN42 loopback IPv4     |
+| `loopbackIpv6` | DN42 loopback IPv6     |
+| `asn`          | Local ASN              |
+| `meshPeers`    | IGP mesh peer list     |
+| `ibgpPeers`    | iBGP peer list         |
 
 ## Full Configuration
 
@@ -121,12 +121,12 @@ See [config.example.json](../configs/config.example.json) for complete example.
 
 These can override config file settings:
 
-| Variable | Config Path | Description |
-|----------|-------------|-------------|
-| `MOENET_NODE_NAME` | `node.name` | Node name |
-| `MOENET_NODE_ID` | `node.id` | Node ID |
-| `MOENET_CP_URL` | `controlPlane.url` | Control Plane URL |
-| `MOENET_CP_TOKEN` | `controlPlane.token` | Agent token |
+| Variable           | Config Path        | Description        |
+|--------------------|--------------------|--------------------||
+| `MOENET_NODE_NAME` | `node.name`        | Node name          |
+| `MOENET_NODE_ID`   | `node.id`          | Node ID            |
+| `MOENET_CP_URL`    | `controlPlane.url` | Control Plane URL  |
+| `MOENET_CP_TOKEN`  | `controlPlane.token` | Agent token      |
 
 ## Configuration Locations
 

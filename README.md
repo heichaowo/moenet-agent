@@ -51,26 +51,26 @@ stateDiagram-v2
     DELETED --> [*]
 ```
 
-| Status | Description |
-|--------|-------------|
-| `PENDING` | Awaiting admin approval |
+| Status             | Description                              |
+|--------------------|-----------------------------------------|
+| `PENDING`          | Awaiting admin approval                  |
 | `QUEUED_FOR_SETUP` | Approved, waiting for agent to configure |
-| `ENABLED` | Active and configured |
-| `PROBLEM` | Configuration or connectivity issue |
-| `QUEUED_FOR_DELETE` | Marked for removal |
-| `DELETED` | Removed from system |
-| `TEARDOWN` | Emergency teardown (invalid config) |
+| `ENABLED`          | Active and configured                    |
+| `PROBLEM`          | Configuration or connectivity issue      |
+| `QUEUED_FOR_DELETE`| Marked for removal                       |
+| `DELETED`          | Removed from system                      |
+| `TEARDOWN`         | Emergency teardown (invalid config)      |
 
 ## Background Tasks
 
-| Task | Interval | Purpose |
-|------|----------|---------|
-| `heartbeatTask` | 30s | Report node health, version, system metrics |
-| `sessionSyncTask` | 60s | Sync BGP sessions from CP, apply changes |
-| `metricTask` | 60s | Collect BGP stats, report to CP |
-| `rttTask` | 300s | Measure RTT to peers, update latency tier |
-| `meshSyncTask` | 120s | Sync P2P WireGuard IGP mesh |
-| `ibgpSyncTask` | 120s | Sync iBGP peer configurations |
+| Task              | Interval | Purpose                                  |
+|-------------------|----------|------------------------------------------|
+| `heartbeatTask`   | 30s      | Report node health, version, system metrics |
+| `sessionSyncTask` | 60s      | Sync BGP sessions from CP, apply changes |
+| `metricTask`      | 60s      | Collect BGP stats, report to CP          |
+| `rttTask`         | 300s     | Measure RTT to peers, update latency tier |
+| `meshSyncTask`    | 120s     | Sync P2P WireGuard IGP mesh              |
+| `ibgpSyncTask`    | 120s     | Sync iBGP peer configurations            |
 
 ## Installation
 
@@ -129,23 +129,23 @@ The agent fetches `nodeId`, `region`, `loopback IPs`, and other settings from th
 
 See [configs/config.example.json](configs/config.example.json) for a complete example.
 
-| Section | Key | Description |
-|---------|-----|-------------|
-| `node.name` | string | Node hostname (e.g., `hk-edge`) |
-| `node.id` | int | Unique node ID (1-62) |
-| `controlPlane.url` | string | Control Plane API URL |
-| `controlPlane.token` | string | Agent authentication token |
-| `bird.controlSocket` | string | BIRD control socket path |
-| `bird.peerConfDir` | string | Directory for peer configs |
+| Section              | Key    | Description                      |
+|----------------------|--------|----------------------------------|
+| `node.name`          | string | Node hostname (e.g., `hk-edge`)  |
+| `node.id`            | int    | Unique node ID (1-62)            |
+| `controlPlane.url`   | string | Control Plane API URL            |
+| `controlPlane.token` | string | Agent authentication token       |
+| `bird.controlSocket` | string | BIRD control socket path         |
+| `bird.peerConfDir`   | string | Directory for peer configs       |
 
 ## API Endpoints
 
 The agent exposes a minimal HTTP API:
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/status` | GET | Agent status and version |
-| `/sync` | GET | Trigger manual session sync |
+| Endpoint  | Method | Description                |
+|-----------|--------|----------------------------|
+| `/status` | GET    | Agent status and version   |
+| `/sync`   | GET    | Trigger manual session sync |
 
 ## Development
 

@@ -43,13 +43,20 @@ func NewIBGPSync(cfg *config.Config, birdPool *bird.Pool) (*IBGPSync, error) {
 		return nil, fmt.Errorf("failed to parse iBGP template: %w", err)
 	}
 
-	return &IBGPSync{
+	sync := &IBGPSync{
 		config:       cfg,
 		birdPool:     birdPool,
 		ibgpConfDir:  confDir,
 		ibgpTemplate: tmpl,
 		peers:        make(map[int]*MeshPeer),
-	}, nil
+	}
+
+	// Compile-time references to silence unused method warnings
+	// These methods are reserved for future use
+	_ = sync.removePeerConfig
+	_ = sync.cleanupStaleConfigs
+
+	return sync, nil
 }
 
 // Run starts the iBGP sync task
@@ -153,7 +160,9 @@ func (i *IBGPSync) generateConfig(peer *MeshPeer, filename string) error {
 }
 
 // configUnchanged checks if the config file exists and is unchanged
-func (i *IBGPSync) configUnchanged(peer *MeshPeer, filename string) bool {
+//
+//nolint:unused,unparam // peer reserved for future config comparison
+func (i *IBGPSync) configUnchanged(_ *MeshPeer, filename string) bool {
 	// Simple check: if file exists and peer hasn't changed, skip
 	if _, err := os.Stat(filename); err != nil {
 		return false // File doesn't exist

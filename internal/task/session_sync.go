@@ -237,7 +237,9 @@ func (s *SessionSync) setupSession(ctx context.Context, session *BgpSession) err
 }
 
 // verifySession checks if an existing session is working
-func (s *SessionSync) verifySession(ctx context.Context, session *BgpSession) error {
+//
+//nolint:unparam // ctx and session reserved for future implementation
+func (s *SessionSync) verifySession(_ context.Context, _ *BgpSession) error {
 	// TODO: Check WireGuard handshake
 	// TODO: Check BIRD protocol state
 	return nil
@@ -275,7 +277,9 @@ func (s *SessionSync) deleteSession(ctx context.Context, session *BgpSession) er
 }
 
 // handleProblemSession attempts to fix a problematic session
-func (s *SessionSync) handleProblemSession(ctx context.Context, session *BgpSession) error {
+//
+//nolint:unparam // ctx reserved for future implementation
+func (s *SessionSync) handleProblemSession(_ context.Context, session *BgpSession) error {
 	log.Printf("[SessionSync] Handling problem session AS%d", session.ASN)
 	// TODO: Attempt to reconfigure
 	return nil
