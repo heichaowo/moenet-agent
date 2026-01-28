@@ -147,13 +147,21 @@ func (i *IBGPSync) generateConfig(peer *MeshPeer, filename string) error {
 	}
 	defer f.Close()
 
+	// Determine local node type from config
+	localIsRR := strings.Contains(strings.ToLower(i.config.Node.Name), "-rr")
+
+	// RR client logic: only add "rr client" when local is RR and peer is NOT RR
+	// This makes the peer a client of this RR, receiving reflected routes
+	markAsRRClient := localIsRR && !peer.IsRR
+
 	data := map[string]interface{}{
-		"NodeID":        peer.NodeID,
-		"NodeName":      peer.NodeName,
-		"LoopbackIPv6":  peer.LoopbackIPv6,
-		"LoopbackIPv4":  peer.LoopbackIPv4,
-		"IsRR":          peer.IsRR,
-		"LocalLoopback": i.config.WireGuard.DN42IPv6,
+		"NodeID":         peer.NodeID,
+		"NodeName":       peer.NodeName,
+		"LoopbackIPv6":   peer.LoopbackIPv6,
+		"LoopbackIPv4":   peer.LoopbackIPv4,
+		"IsRR":           peer.IsRR,
+		"MarkAsRRClient": markAsRRClient, // true = add "rr client" directive
+		"LocalLoopback":  i.config.WireGuard.DN42IPv6,
 	}
 
 	return i.ibgpTemplate.Execute(f, data)
@@ -188,7 +196,7 @@ const ibgpTemplate = `# iBGP peer: {{.NodeName}} (Node {{.NodeID}})
 protocol bgp ibgp_{{.NodeID}} from ibgp_peers {
     neighbor {{.LoopbackIPv6}} as 4242420216;
     description "iBGP to {{.NodeName}}";
-    {{- if .IsRR}}
+    {{- if .MarkAsRRClient}}
     rr client;
     {{- end}}
     
