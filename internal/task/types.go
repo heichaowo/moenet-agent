@@ -132,3 +132,53 @@ type HeartbeatPayload struct {
 	UDPConns      int    `json:"udp"`
 	MeshPublicKey string `json:"meshPublicKey,omitempty"`
 }
+
+// BirdConfigResponse represents the /bird-config API response
+type BirdConfigResponse struct {
+	ConfigHash string         `json:"configHash"`
+	Node       BirdNodeConfig `json:"node"`
+	Policy     BirdPolicy     `json:"policy"`
+	IBGPPeers  []BirdIBGPPeer `json:"ibgpPeers"`
+}
+
+// BirdNodeConfig contains node-specific settings
+type BirdNodeConfig struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Bandwidth    string `json:"bandwidth"`
+	RegionCode   string `json:"regionCode"`
+	LoopbackIPv4 string `json:"loopbackIpv4"`
+	LoopbackIPv6 string `json:"loopbackIpv6"`
+}
+
+// BirdPolicy contains BIRD routing policy parameters
+type BirdPolicy struct {
+	DN42As           uint32                 `json:"dn42As"`
+	DN42Ipv4Prefix   string                 `json:"dn42Ipv4Prefix"`
+	DN42Ipv6Prefix   string                 `json:"dn42Ipv6Prefix"`
+	RPKIServers      []RPKIServer           `json:"rpkiServers"`
+	EBGPImportLimit  int                    `json:"ebgpImportLimit"`
+	EBGPExportLimit  int                    `json:"ebgpExportLimit"`
+	IBGPImportLimit  int                    `json:"ibgpImportLimit"`
+	IBGPExportLimit  int                    `json:"ibgpExportLimit"`
+	ASPathMaxLen     int                    `json:"asPathMaxLen"`
+	Communities      map[string]interface{} `json:"communities"`
+	LargeCommunities map[string]interface{} `json:"largeCommunities"`
+}
+
+// RPKIServer represents an RPKI server configuration
+type RPKIServer struct {
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
+}
+
+// BirdIBGPPeer represents an iBGP peer for mesh configuration
+type BirdIBGPPeer struct {
+	NodeID       int    `json:"nodeId"`
+	NodeName     string `json:"nodeName"`
+	LoopbackIPv4 string `json:"loopbackIpv4"`
+	LoopbackIPv6 string `json:"loopbackIpv6"`
+	IsRR         bool   `json:"isRr"`
+}

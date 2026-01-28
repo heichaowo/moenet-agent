@@ -8,6 +8,7 @@ A Go agent for automated BGP peering session management on MoeNet DN42 infrastru
 
 - **Session Lifecycle Management**: Automated setup, monitoring, and teardown of BGP peering sessions
 - **BIRD Integration**: Connection pool for efficient BIRD control socket communication
+- **BIRD Config Rendering**: Template-based configuration generation from Control Plane policies
 - **WireGuard Management**: Direct interface management without wg-quick
 - **P2P Mesh IGP**: WireGuard-based IGP underlay with Babel
 - **Real-time Metrics**: RTT measurement, route statistics, traffic monitoring
@@ -29,10 +30,12 @@ graph TB
     end
     
     Agent -->|GET /sessions| CP
+    Agent -->|GET /bird-config| CP
     Agent -->|POST /heartbeat| CP
     Agent -->|POST /modify| CP
     Agent -->|POST /report| CP
     
+    Agent -->|Render templates| BIRD
     Agent -->|birdc configure| BIRD
     Agent -->|wg set| WG
 ```
@@ -63,14 +66,15 @@ stateDiagram-v2
 
 ## Background Tasks
 
-| Task              | Interval | Purpose                                  |
-|-------------------|----------|------------------------------------------|
-| `heartbeatTask`   | 30s      | Report node health, version, system metrics |
-| `sessionSyncTask` | 60s      | Sync BGP sessions from CP, apply changes |
-| `metricTask`      | 60s      | Collect BGP stats, report to CP          |
-| `rttTask`         | 300s     | Measure RTT to peers, update latency tier |
-| `meshSyncTask`    | 120s     | Sync P2P WireGuard IGP mesh              |
-| `ibgpSyncTask`    | 120s     | Sync iBGP peer configurations            |
+| Task               | Interval | Purpose                                  |
+|--------------------|----------|------------------------------------------|
+| `heartbeatTask`    | 30s      | Report node health, version, system metrics |
+| `sessionSyncTask`  | 60s      | Sync BGP sessions from CP, apply changes |
+| `birdConfigTask`   | 300s     | Sync BIRD policy from CP, render templates |
+| `metricTask`       | 60s      | Collect BGP stats, report to CP          |
+| `rttTask`          | 300s     | Measure RTT to peers, update latency tier |
+| `meshSyncTask`     | 120s     | Sync P2P WireGuard IGP mesh              |
+| `ibgpSyncTask`     | 120s     | Sync iBGP peer configurations            |
 
 ## Installation
 
