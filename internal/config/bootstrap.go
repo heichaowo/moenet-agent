@@ -14,9 +14,9 @@ import (
 // BootstrapConfig is the minimal local configuration for bootstrap mode
 type BootstrapConfig struct {
 	Bootstrap struct {
-		ControlPlaneURL string `json:"controlPlaneUrl"`
-		NodeName        string `json:"nodeName"`
-		Token           string `json:"token"`
+		APIURL   string `json:"apiUrl"`
+		NodeName string `json:"nodeName"`
+		Token    string `json:"token"`
 	} `json:"bootstrap"`
 	Server ServerConfig `json:"server"`
 }
@@ -41,8 +41,8 @@ func LoadWithBootstrap(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse bootstrap config: %w", err)
 	}
 
-	if bootstrap.Bootstrap.ControlPlaneURL == "" || bootstrap.Bootstrap.NodeName == "" {
-		return nil, fmt.Errorf("bootstrap config missing required fields (controlPlaneUrl, nodeName)")
+	if bootstrap.Bootstrap.APIURL == "" || bootstrap.Bootstrap.NodeName == "" {
+		return nil, fmt.Errorf("bootstrap config missing required fields (apiUrl, nodeName)")
 	}
 
 	// Fetch config from control plane
@@ -60,7 +60,7 @@ func LoadWithBootstrap(path string) (*Config, error) {
 // fetchConfigFromCP fetches agent configuration from control plane
 func fetchConfigFromCP(bootstrap BootstrapConfig) (*RemoteConfig, error) {
 	url := fmt.Sprintf("%s/api/v1/agent/%s/config",
-		bootstrap.Bootstrap.ControlPlaneURL,
+		bootstrap.Bootstrap.APIURL,
 		bootstrap.Bootstrap.NodeName,
 	)
 
@@ -117,7 +117,7 @@ func mergeConfig(bootstrap BootstrapConfig, remote *RemoteConfig) *Config {
 		Metric:     remote.Metric,
 		AutoUpdate: remote.AutoUpdate,
 		ControlPlane: ControlPlaneConfig{
-			URL:   bootstrap.Bootstrap.ControlPlaneURL,
+			URL:   bootstrap.Bootstrap.APIURL,
 			Token: bootstrap.Bootstrap.Token,
 		},
 	}

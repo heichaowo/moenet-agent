@@ -14,7 +14,7 @@ Minimal configuration that fetches settings from Control Plane at startup:
 ```json
 {
   "bootstrap": {
-    "controlPlaneUrl": "https://api.moenet.work",
+    "apiUrl": "https://api.moenet.work",
     "nodeName": "jp-edge",
     "token": "your-agent-token"
   },
@@ -148,5 +148,5 @@ The agent validates configuration at startup:
 Required fields:
 
 - `node.name` or `bootstrap.nodeName`
-- `controlPlane.url` or `bootstrap.controlPlaneUrl`
+- `controlPlane.url` or `bootstrap.apiUrl`
 - `controlPlane.token` or `bootstrap.token`

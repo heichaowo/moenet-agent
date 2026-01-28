@@ -44,7 +44,7 @@ func TestBootstrapConfigParsing(t *testing.T) {
 
 	bootstrapConfig := `{
 		"bootstrap": {
-			"controlPlaneUrl": "https://api.moenet.work",
+			"apiUrl": "https://api.moenet.work",
 			"nodeName": "test-node",
 			"token": "test-token"
 		},

@@ -1,7 +1,7 @@
 {
     "_comment": "Bootstrap mode - minimal config, full config fetched from Control Plane",
     "bootstrap": {
-        "controlPlaneUrl": "https://api.moenet.work",
+        "apiUrl": "https://api.moenet.work",
         "nodeName": "example-node",
         "token": "your-agent-token-here"
     },
