@@ -201,11 +201,12 @@ func (m *MeshSync) ensureMeshTunnel(peer *MeshPeer) error {
 	}
 
 	// Assign IPv6 link-local address for Babel IGP
-	// Format: fe80::nodeID/64 (local node ID for uniqueness)
-	localNodeID := m.config.Node.ID
-	linkLocalAddr := fmt.Sprintf("fe80::%d/64", localNodeID)
-	if err := m.wgExecutor.AddAddress(ifname, linkLocalAddr); err != nil {
-		log.Printf("[MeshSync] Warning: failed to add link-local address to %s: %v", ifname, err)
+	// Format: fe80:{region}:{local_index}::1 derived from loopback fd00:4242:7777:{region}:{local_index}::1
+	linkLocalAddr := deriveLLAFromLoopback(m.config.WireGuard.DN42IPv6)
+	if linkLocalAddr != "" {
+		if err := m.wgExecutor.AddAddress(ifname, linkLocalAddr); err != nil {
+			log.Printf("[MeshSync] Warning: failed to add link-local address to %s: %v", ifname, err)
+		}
 	}
 
 	log.Printf("[MeshSync] Configured tunnel to %s (%s)", peer.NodeName, peer.Endpoint)
@@ -248,4 +249,54 @@ func (m *MeshSync) reportMeshStatus(ctx context.Context, status map[int]string) 
 	defer resp.Body.Close()
 
 	return nil
+}
+
+// deriveLLAFromLoopback derives link-local address from loopback IPv6
+// Loopback format: fd00:4242:7777:{region}:{local_index}::1
+// LLA format: fe80:{region}:{local_index}::1/64
+func deriveLLAFromLoopback(loopback string) string {
+	if loopback == "" {
+		return ""
+	}
+	// Parse loopback like "fd00:4242:7777:302:1::1"
+	// Split by ":" and extract region (index 3) and local_index (index 4)
+	parts := splitIPv6(loopback)
+	if len(parts) < 5 {
+		return ""
+	}
+	// parts[0:3] = "fd00", "4242", "7777"
+	// parts[3] = region (e.g., "302")
+	// parts[4] = local_index (e.g., "1")
+	region := parts[3]
+	localIndex := parts[4]
+	return fmt.Sprintf("fe80:%s:%s::1/64", region, localIndex)
+}
+
+// splitIPv6 splits an IPv6 address by colon, expanding :: if present
+func splitIPv6(addr string) []string {
+	// Remove any CIDR suffix
+	if idx := len(addr) - 1; idx > 0 {
+		for i := len(addr) - 1; i >= 0; i-- {
+			if addr[i] == '/' {
+				addr = addr[:i]
+				break
+			}
+		}
+	}
+	// Simple split - for our loopback format fd00:4242:7777:XXX:Y::1
+	// We just need the first 5 parts before the ::
+	parts := []string{}
+	current := ""
+	for _, c := range addr {
+		if c == ':' {
+			parts = append(parts, current)
+			current = ""
+		} else {
+			current += string(c)
+		}
+	}
+	if current != "" {
+		parts = append(parts, current)
+	}
+	return parts
 }
