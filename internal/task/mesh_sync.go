@@ -178,8 +178,8 @@ func (m *MeshSync) ensureMeshTunnel(peer *MeshPeer) error {
 	}
 
 	// Create interface
-	// Use port based on LOCAL node ID (51820 + selfNodeID) so each node has unique port
-	listenPort := 51820 + m.config.Node.ID
+	// Use port based on PEER node ID (51820 + peerNodeID) so each interface has unique port
+	listenPort := 51820 + peer.NodeID
 	if err := m.wgExecutor.CreateInterface(
 		ifname,
 		listenPort,
