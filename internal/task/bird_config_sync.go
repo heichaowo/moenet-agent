@@ -132,7 +132,7 @@ func (s *BirdConfigSync) Sync(ctx context.Context) error {
 
 // fetchBirdConfig retrieves BIRD configuration from Control Plane
 func (s *BirdConfigSync) fetchBirdConfig(ctx context.Context) (*BirdConfigResponse, error) {
-	url := fmt.Sprintf("%s/agent/%s/bird-config", s.config.ControlPlane.URL, s.config.Node.Name)
+	url := fmt.Sprintf("%s/api/v1/agent/%s/bird-config", s.config.ControlPlane.URL, s.config.Node.Name)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
