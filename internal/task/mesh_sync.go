@@ -170,13 +170,13 @@ func (m *MeshSync) fetchMeshConfig(ctx context.Context) (*MeshConfig, error) {
 func (m *MeshSync) ensureMeshTunnel(peer *MeshPeer) error {
 	ifname := fmt.Sprintf("dn42-wg-igp-%d", peer.NodeID)
 
-	// Build allowed IPs (peer's loopback addresses)
-	allowedIPs := []string{}
-	if peer.LoopbackIPv4 != "" {
-		allowedIPs = append(allowedIPs, peer.LoopbackIPv4+"/32")
-	}
-	if peer.LoopbackIPv6 != "" {
-		allowedIPs = append(allowedIPs, peer.LoopbackIPv6+"/128")
+	// Build allowed IPs - use wide ranges like existing working IGP tunnels
+	// This enables proper Babel IGP routing over the mesh
+	allowedIPs := []string{
+		"fe80::/10",           // Link-local (for Babel)
+		"ff00::/8",            // Multicast
+		"fd00:4242:7777::/64", // DN42 loopback subnet
+		"172.22.188.0/26",     // DN42 IPv4 loopback subnet
 	}
 
 	// Create interface
