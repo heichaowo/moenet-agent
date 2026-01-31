@@ -17,6 +17,9 @@ import (
 	"github.com/moenet/moenet-agent/internal/config"
 )
 
+// IP refresh interval - check IP every hour
+const ipRefreshInterval = time.Hour
+
 // Heartbeat handles node health reporting to Control Plane
 type Heartbeat struct {
 	config     *config.Config
@@ -24,6 +27,14 @@ type Heartbeat struct {
 
 	// System info (cached at startup)
 	kernel string
+
+	// Cached public IPs (refreshed every ipRefreshInterval)
+	cachedIPv4   string
+	cachedIPv6   string
+	lastIPCheck  time.Time
+	ipMutex      sync.RWMutex
+	reportedIPv4 string // Last IP reported to API
+	reportedIPv6 string // Last IP reported to API
 }
 
 // NewHeartbeat creates a new heartbeat handler
@@ -36,13 +47,18 @@ func NewHeartbeat(cfg *config.Config) *Heartbeat {
 		}
 	}
 
-	return &Heartbeat{
+	h := &Heartbeat{
 		config: cfg,
 		httpClient: &http.Client{
 			Timeout: time.Duration(cfg.ControlPlane.RequestTimeout) * time.Second,
 		},
 		kernel: kernel,
 	}
+
+	// Detect IPs at startup
+	h.refreshPublicIPs()
+
+	return h
 }
 
 // Run starts the heartbeat task
@@ -71,6 +87,9 @@ func (h *Heartbeat) Run(ctx context.Context, wg *sync.WaitGroup, version string)
 
 // sendHeartbeat sends health metrics to Control Plane
 func (h *Heartbeat) sendHeartbeat(ctx context.Context, version string) error {
+	// Get IPs to report (only if changed since last report)
+	ipv4, ipv6 := h.getIPsForHeartbeat()
+
 	payload := HeartbeatPayload{
 		Version:       version,
 		Kernel:        h.kernel,
@@ -82,8 +101,8 @@ func (h *Heartbeat) sendHeartbeat(ctx context.Context, version string) error {
 		TCPConns:      h.getTCPConns(),
 		UDPConns:      h.getUDPConns(),
 		MeshPublicKey: h.getMeshPublicKey(),
-		PublicIPv4:    h.getPublicIP("4"),
-		PublicIPv6:    h.getPublicIP("6"),
+		PublicIPv4:    ipv4, // Only set if changed
+		PublicIPv6:    ipv6, // Only set if changed
 	}
 
 	body, err := json.Marshal(map[string]interface{}{
@@ -272,8 +291,57 @@ func (h *Heartbeat) getPublicIP(version string) string {
 	}
 
 	ip := strings.TrimSpace(string(body))
-	if ip != "" && version == "4" {
-		log.Printf("[Heartbeat] Detected public IPv4: %s", ip)
-	}
 	return ip
+}
+
+// refreshPublicIPs fetches public IPs from external service and caches them
+func (h *Heartbeat) refreshPublicIPs() {
+	h.ipMutex.Lock()
+	defer h.ipMutex.Unlock()
+
+	// Fetch IPv4
+	ipv4 := h.getPublicIP("4")
+	if ipv4 != "" {
+		if h.cachedIPv4 != ipv4 {
+			log.Printf("[Heartbeat] Detected public IPv4: %s", ipv4)
+		}
+		h.cachedIPv4 = ipv4
+	}
+
+	// Fetch IPv6
+	ipv6 := h.getPublicIP("6")
+	if ipv6 != "" {
+		if h.cachedIPv6 != ipv6 {
+			log.Printf("[Heartbeat] Detected public IPv6: %s", ipv6)
+		}
+		h.cachedIPv6 = ipv6
+	}
+
+	h.lastIPCheck = time.Now()
+}
+
+// getIPsForHeartbeat returns IPs to report (only if changed since last report)
+// Also refreshes cache if interval has passed
+func (h *Heartbeat) getIPsForHeartbeat() (ipv4, ipv6 string) {
+	h.ipMutex.Lock()
+	defer h.ipMutex.Unlock()
+
+	// Refresh IPs if interval has passed
+	if time.Since(h.lastIPCheck) >= ipRefreshInterval {
+		h.ipMutex.Unlock() // Unlock before blocking I/O
+		h.refreshPublicIPs()
+		h.ipMutex.Lock()
+	}
+
+	// Only return IP if it changed since last report
+	if h.cachedIPv4 != h.reportedIPv4 {
+		ipv4 = h.cachedIPv4
+		h.reportedIPv4 = h.cachedIPv4
+	}
+	if h.cachedIPv6 != h.reportedIPv6 {
+		ipv6 = h.cachedIPv6
+		h.reportedIPv6 = h.cachedIPv6
+	}
+
+	return ipv4, ipv6
 }
