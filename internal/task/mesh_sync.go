@@ -182,7 +182,7 @@ func (m *MeshSync) ensureMeshTunnel(peer *MeshPeer) error {
 	// Create interface
 	if err := m.wgExecutor.CreateInterface(
 		ifname,
-		0, // Dynamic port
+		51820, // Fixed port - API returns :51820 endpoint
 		peer.PublicKey,
 		peer.Endpoint,
 		allowedIPs,
