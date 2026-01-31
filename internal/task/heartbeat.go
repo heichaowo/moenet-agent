@@ -246,23 +246,34 @@ func (h *Heartbeat) getPublicIP(version string) string {
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
+		log.Printf("[Heartbeat] Failed to create IP detection request: %v", err)
 		return ""
 	}
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
+		// Only log IPv4 failures (IPv6 is expected to fail on many nodes)
+		if version == "4" {
+			log.Printf("[Heartbeat] Failed to detect public IPv%s: %v", version, err)
+		}
 		return ""
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		log.Printf("[Heartbeat] IP detection returned status %d", resp.StatusCode)
 		return ""
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Printf("[Heartbeat] Failed to read IP response: %v", err)
 		return ""
 	}
 
-	return strings.TrimSpace(string(body))
+	ip := strings.TrimSpace(string(body))
+	if ip != "" && version == "4" {
+		log.Printf("[Heartbeat] Detected public IPv4: %s", ip)
+	}
+	return ip
 }
