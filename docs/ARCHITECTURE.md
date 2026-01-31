@@ -67,6 +67,7 @@ moenet-agent/
 | `rtt` | 300s | Measure RTT to peers |
 | `meshSync` | 120s | Sync P2P WireGuard mesh |
 | `ibgpSync` | 120s | Sync iBGP configurations |
+| `birdConfigSync` | 300s | Sync BIRD filters, communities, Babel |
 
 ## Session Lifecycle
 

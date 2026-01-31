@@ -145,13 +145,17 @@ type BirdConfigResponse struct {
 
 // BirdNodeConfig contains node-specific settings
 type BirdNodeConfig struct {
-	ID           int    `json:"id"`
-	Name         string `json:"name"`
-	Type         string `json:"type"`
-	Bandwidth    string `json:"bandwidth"`
-	RegionCode   int    `json:"regionCode"`
-	LoopbackIPv4 string `json:"loopbackIpv4"`
-	LoopbackIPv6 string `json:"loopbackIpv6"`
+	ID                 int    `json:"id"`
+	Name               string `json:"name"`
+	Type               string `json:"type"`
+	Bandwidth          string `json:"bandwidth"`
+	RegionCode         int    `json:"regionCode"`
+	LoopbackIPv4       string `json:"loopbackIpv4"`
+	LoopbackIPv6       string `json:"loopbackIpv6"`
+	ContinentLC        string `json:"continentLc"`        // e.g., "LC_ORIGIN_AS"
+	SubregionLC        string `json:"subregionLc"`        // e.g., "LC_REGION_AS_E"
+	RegionCommunity    string `json:"regionCommunity"`    // e.g., "DN42_REGION_AS_E"
+	BandwidthCommunity string `json:"bandwidthCommunity"` // e.g., "DN42_BW_1G_PLUS"
 }
 
 // BirdPolicy contains BIRD routing policy parameters

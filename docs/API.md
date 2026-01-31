@@ -176,6 +176,41 @@ Fetch full bootstrap configuration.
 }
 ```
 
+### GET /agent/:router/bird-config
+
+Fetch BIRD routing policy and community configurations.
+
+**Response:**
+
+```json
+{
+  "configHash": "abc123",
+  "node": {
+    "id": 1,
+    "name": "jp-edge",
+    "type": "edge",
+    "bandwidth": "1G",
+    "regionCode": 101,
+    "loopbackIpv4": "172.23.105.177",
+    "loopbackIpv6": "fd00:4242:7777:101:1::1",
+    "continentLc": "LC_ORIGIN_AS",
+    "subregionLc": "LC_REGION_AS_E",
+    "regionCommunity": "DN42_REGION_AS_E",
+    "bandwidthCommunity": "DN42_BW_1G_PLUS"
+  },
+  "policy": {
+    "dn42As": "4242420998",
+    "dn42Ipv4Prefix": "172.23.105.176/28",
+    "dn42Ipv6Prefix": "fd48:4da8:420::/48",
+    "rpkiServers": [...],
+    "ebgpImportLimit": 10000,
+    "ebgpExportLimit": 100,
+    "asPathMaxLen": 10
+  },
+  "ibgpPeers": [...]
+}
+```
+
 ## Error Handling
 
 All endpoints return standard HTTP status codes:

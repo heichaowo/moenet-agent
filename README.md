@@ -9,6 +9,8 @@ A Go agent for automated BGP peering session management on MoeNet DN42 infrastru
 - **Session Lifecycle Management**: Automated setup, monitoring, and teardown of BGP peering sessions
 - **BIRD Integration**: Connection pool for efficient BIRD control socket communication
 - **BIRD Config Rendering**: Template-based configuration generation from Control Plane policies
+- **DN42 Communities**: Proper community tagging only on self-originated routes
+- **Cold Potato Routing**: Internal routing optimization via MoeNet Large Communities
 - **WireGuard Management**: Direct interface management without wg-quick
 - **P2P Mesh IGP**: WireGuard-based IGP underlay with Babel
 - **Real-time Metrics**: RTT measurement, route statistics, traffic monitoring
