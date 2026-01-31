@@ -15,6 +15,7 @@ import (
 	"github.com/moenet/moenet-agent/internal/api"
 	"github.com/moenet/moenet-agent/internal/bird"
 	"github.com/moenet/moenet-agent/internal/config"
+	"github.com/moenet/moenet-agent/internal/httpclient"
 	"github.com/moenet/moenet-agent/internal/maintenance"
 	"github.com/moenet/moenet-agent/internal/task"
 	"github.com/moenet/moenet-agent/internal/updater"
@@ -123,12 +124,21 @@ func main() {
 	}
 	rttMeasurement := task.NewRTTMeasurement(cfg)
 
+	// Initialize HTTP client for BirdConfigSync
+	httpClient := httpclient.New(nil, httpclient.DefaultRetryConfig())
+
+	// Initialize BIRD config sync (connects to iBGP sync)
+	birdConfigSync, err := task.NewBirdConfigSync(cfg, birdPool, httpClient, ibgpSync)
+	if err != nil {
+		log.Fatalf("Failed to initialize BIRD config sync: %v", err)
+	}
+
 	// Connect MeshSync to RTT so RTT can use mesh peer loopback IPs
 	meshSync.SetOnPeersUpdated(rttMeasurement.UpdateMeshPeers)
 
 	// Create WaitGroup for background tasks
 	var wg sync.WaitGroup
-	taskCount := 6
+	taskCount := 7 // heartbeat, sessionSync, metricCollector, rttMeasurement, meshSync, ibgpSync, birdConfigSync
 
 	// Initialize auto-updater if enabled
 	var agentUpdater *updater.Updater
@@ -154,6 +164,7 @@ func main() {
 	go rttMeasurement.Run(ctx, &wg)
 	go meshSync.Run(ctx, &wg)
 	go ibgpSync.Run(ctx, &wg)
+	go birdConfigSync.Run(ctx, &wg)
 	if agentUpdater != nil {
 		go agentUpdater.Run(ctx, &wg)
 	}

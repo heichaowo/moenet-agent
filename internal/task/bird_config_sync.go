@@ -25,6 +25,7 @@ type BirdConfigSync struct {
 	birdPool   *bird.Pool
 	httpClient *httpclient.Client
 	confDir    string
+	ibgpSync   *IBGPSync // Reference to iBGP sync for peer updates
 
 	mu             sync.RWMutex
 	lastConfigHash string
@@ -32,7 +33,7 @@ type BirdConfigSync struct {
 }
 
 // NewBirdConfigSync creates a new BIRD config sync handler
-func NewBirdConfigSync(cfg *config.Config, birdPool *bird.Pool, httpClient *httpclient.Client) (*BirdConfigSync, error) {
+func NewBirdConfigSync(cfg *config.Config, birdPool *bird.Pool, httpClient *httpclient.Client, ibgpSync *IBGPSync) (*BirdConfigSync, error) {
 	confDir := "/etc/bird"
 
 	s := &BirdConfigSync{
@@ -40,6 +41,7 @@ func NewBirdConfigSync(cfg *config.Config, birdPool *bird.Pool, httpClient *http
 		birdPool:   birdPool,
 		httpClient: httpClient,
 		confDir:    confDir,
+		ibgpSync:   ibgpSync,
 		templates:  make(map[string]*template.Template),
 	}
 
@@ -83,6 +85,12 @@ func (s *BirdConfigSync) Sync(ctx context.Context) error {
 	birdConfig, err := s.fetchBirdConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch bird config: %w", err)
+	}
+
+	// Always update iBGP peers (regardless of config hash)
+	if s.ibgpSync != nil && len(birdConfig.IBGPPeers) > 0 {
+		s.ibgpSync.UpdatePeersFromAPI(birdConfig.IBGPPeers)
+		log.Printf("[BirdConfig] Updated iBGP peers: %d peers", len(birdConfig.IBGPPeers))
 	}
 
 	// Check if config has changed

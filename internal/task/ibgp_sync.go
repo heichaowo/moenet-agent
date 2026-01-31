@@ -88,8 +88,10 @@ func (i *IBGPSync) Run(ctx context.Context, wg *sync.WaitGroup) {
 func (i *IBGPSync) Sync(ctx context.Context) error {
 	i.mu.RLock()
 	peers := make([]*MeshPeer, 0, len(i.peers))
-	for _, peer := range i.peers {
+	peerMap := make(map[int]*MeshPeer)
+	for id, peer := range i.peers {
 		peers = append(peers, peer)
+		peerMap[id] = peer
 	}
 	i.mu.RUnlock()
 
@@ -115,6 +117,11 @@ func (i *IBGPSync) Sync(ctx context.Context) error {
 		changed = true
 	}
 
+	// Clean up stale configs (files not matching current peers)
+	if err := i.cleanupStaleConfigs(peerMap); err != nil {
+		log.Printf("[iBGP] Warning: cleanup failed: %v", err)
+	}
+
 	// Reload BIRD if configs changed
 	if changed {
 		if err := i.birdPool.Configure(); err != nil {
@@ -132,6 +139,27 @@ func (i *IBGPSync) UpdatePeers(peers map[int]*MeshPeer) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	i.peers = peers
+}
+
+// UpdatePeersFromAPI updates the peer list from API response
+func (i *IBGPSync) UpdatePeersFromAPI(apiPeers []BirdIBGPPeer) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	// Convert API peers to internal format
+	newPeers := make(map[int]*MeshPeer)
+	for _, p := range apiPeers {
+		newPeers[p.NodeID] = &MeshPeer{
+			NodeID:       p.NodeID,
+			NodeName:     p.NodeName,
+			LoopbackIPv4: p.LoopbackIPv4,
+			LoopbackIPv6: p.LoopbackIPv6,
+			IsRR:         p.IsRR,
+		}
+	}
+	i.peers = newPeers
+
+	log.Printf("[iBGP] Received %d peers from API", len(apiPeers))
 }
 
 // generateConfig generates iBGP configuration for a peer
@@ -215,8 +243,6 @@ protocol bgp ibgp_{{.NodeID}} from ibgp_peers {
 `
 
 // cleanupStaleConfigs removes configs for peers that no longer exist
-//
-//nolint:unused // Reserved for future use
 func (i *IBGPSync) cleanupStaleConfigs(currentPeers map[int]*MeshPeer) error {
 	files, err := os.ReadDir(i.ibgpConfDir)
 	if err != nil {
