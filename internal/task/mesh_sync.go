@@ -200,6 +200,14 @@ func (m *MeshSync) ensureMeshTunnel(peer *MeshPeer) error {
 		log.Printf("[MeshSync] Warning: failed to set MTU for %s: %v", ifname, err)
 	}
 
+	// Assign IPv6 link-local address for Babel IGP
+	// Format: fe80::nodeID/64 (local node ID for uniqueness)
+	localNodeID := m.config.Node.ID
+	linkLocalAddr := fmt.Sprintf("fe80::%d/64", localNodeID)
+	if err := m.wgExecutor.AddAddress(ifname, linkLocalAddr); err != nil {
+		log.Printf("[MeshSync] Warning: failed to add link-local address to %s: %v", ifname, err)
+	}
+
 	log.Printf("[MeshSync] Configured tunnel to %s (%s)", peer.NodeName, peer.Endpoint)
 	return nil
 }
