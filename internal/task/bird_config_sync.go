@@ -436,9 +436,9 @@ protocol babel mesh_babel {
     };
 }
 
-# Direct protocol for loopback addresses
+# Direct protocol for loopback addresses (dummy0 interface)
 protocol direct mesh_direct {
-    interface "lo";
+    interface "dummy0";
     ipv4 { table master4; };
     ipv6 { table master6; };
 }

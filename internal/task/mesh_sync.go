@@ -253,7 +253,7 @@ func (m *MeshSync) reportMeshStatus(ctx context.Context, status map[int]string) 
 
 // deriveLLAFromLoopback derives link-local address from loopback IPv6
 // Loopback format: fd00:4242:7777:{region}:{local_index}::1
-// LLA format: fe80:{region}:{local_index}::1/64
+// LLA format: fe80::998:{region}:{local_index}:1/64 (998 = MoeNet identifier)
 func deriveLLAFromLoopback(loopback string) string {
 	if loopback == "" {
 		return ""
@@ -266,10 +266,12 @@ func deriveLLAFromLoopback(loopback string) string {
 	}
 	// parts[0:3] = "fd00", "4242", "7777"
 	// parts[3] = region (e.g., "302")
-	// parts[4] = local_index (e.g., "1")
+	// parts[4] = local_index (e.g., "1" for ch which is first in region 302)
 	region := parts[3]
 	localIndex := parts[4]
-	return fmt.Sprintf("fe80:%s:%s::1/64", region, localIndex)
+	// Format: fe80::998:{region}:{local_index}:1/64
+	// Example: fd00:4242:7777:302:1::1 -> fe80::998:302:1:1/64
+	return fmt.Sprintf("fe80::998:%s:%s:1/64", region, localIndex)
 }
 
 // splitIPv6 splits an IPv6 address by colon, expanding :: if present
