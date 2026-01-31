@@ -149,14 +149,14 @@ type BirdNodeConfig struct {
 	Name         string `json:"name"`
 	Type         string `json:"type"`
 	Bandwidth    string `json:"bandwidth"`
-	RegionCode   string `json:"regionCode"`
+	RegionCode   int    `json:"regionCode"`
 	LoopbackIPv4 string `json:"loopbackIpv4"`
 	LoopbackIPv6 string `json:"loopbackIpv6"`
 }
 
 // BirdPolicy contains BIRD routing policy parameters
 type BirdPolicy struct {
-	DN42As           uint32                 `json:"dn42As"`
+	DN42As           string                 `json:"dn42As"`
 	DN42Ipv4Prefix   string                 `json:"dn42Ipv4Prefix"`
 	DN42Ipv6Prefix   string                 `json:"dn42Ipv6Prefix"`
 	RPKIServers      []RPKIServer           `json:"rpkiServers"`
