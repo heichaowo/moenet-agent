@@ -388,9 +388,16 @@ function is_valid_dn42_prefix6() -> bool {
 # -----------------------------------------------------------------------------
 
 function check_roa() -> bool {
-    if (roa_check(dn42_roa, net, bgp_path.last) = ROA_VALID) then return true;
-    if (roa_check(dn42_roa, net, bgp_path.last) = ROA_UNKNOWN) then return true;
-    return false;
+    if (net.type = NET_IP4) then {
+        if (roa_check(dn42_roa4, net, bgp_path.last) = ROA_INVALID) then {
+            return false;
+        }
+    } else {
+        if (roa_check(dn42_roa6, net, bgp_path.last) = ROA_INVALID) then {
+            return false;
+        }
+    }
+    return true;
 }
 
 # -----------------------------------------------------------------------------
