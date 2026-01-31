@@ -415,8 +415,8 @@ const babelTemplate = `# =======================================================
 # =============================================================================
 
 protocol babel mesh_babel {
-    # Babel operates on all wg_mesh_* interfaces
-    interface "wg_mesh_*" {
+    # Babel operates on all dn42-wg-igp-* mesh interfaces
+    interface "dn42-wg-igp-*" {
         type wired;
         hello interval 4 s;
         update interval 20 s;
