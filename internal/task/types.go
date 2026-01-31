@@ -131,6 +131,8 @@ type HeartbeatPayload struct {
 	TCPConns      int    `json:"tcp"`
 	UDPConns      int    `json:"udp"`
 	MeshPublicKey string `json:"meshPublicKey,omitempty"`
+	PublicIPv4    string `json:"publicIpv4,omitempty"`
+	PublicIPv6    string `json:"publicIpv6,omitempty"`
 }
 
 // BirdConfigResponse represents the /bird-config API response

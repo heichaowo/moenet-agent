@@ -82,6 +82,8 @@ func (h *Heartbeat) sendHeartbeat(ctx context.Context, version string) error {
 		TCPConns:      h.getTCPConns(),
 		UDPConns:      h.getUDPConns(),
 		MeshPublicKey: h.getMeshPublicKey(),
+		PublicIPv4:    h.getPublicIP("4"),
+		PublicIPv6:    h.getPublicIP("6"),
 	}
 
 	body, err := json.Marshal(map[string]interface{}{
@@ -228,4 +230,39 @@ func (h *Heartbeat) getMeshPublicKey() string {
 		return ""
 	}
 	return strings.TrimSpace(string(data))
+}
+
+// getPublicIP detects the public IP address (IPv4 or IPv6)
+func (h *Heartbeat) getPublicIP(version string) string {
+	var url string
+	if version == "4" {
+		url = "https://api4.ipify.org"
+	} else {
+		url = "https://api6.ipify.org"
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return ""
+	}
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(string(body))
 }

@@ -225,4 +225,4 @@ Configuration in `config.json`:
 
 ## License
 
-GPL-3.0
+No License
