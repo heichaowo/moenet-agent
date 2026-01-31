@@ -16,6 +16,26 @@ A Go agent for automated BGP peering session management on MoeNet DN42 infrastru
 - **Real-time Metrics**: RTT measurement, route statistics, traffic monitoring
 - **Graceful Shutdown**: Context-based cancellation with proper resource cleanup
 
+## BGP Communities
+
+The agent generates BIRD filters that tag routes with DN42 community information:
+
+### Self-Originated Routes
+
+Only routes originated by MoeNet (static/device) receive community tags:
+
+| Community | Description |
+| :--- | :--- |
+| `(64511, 1-9)` | Latency tier based on RTT measurement |
+| `(64511, 21-25)` | Bandwidth tier |
+| `(64511, 31-34)` | Encryption type (WireGuard = 33) |
+| `(64511, 41-53)` | Region code |
+| `(4242420998, 100, <NodeID>)` | Accepted at node |
+
+### Learned Routes
+
+BGP-learned routes pass through **without modification**, preserving upstream communities.
+
 ## Architecture
 
 ```mermaid
