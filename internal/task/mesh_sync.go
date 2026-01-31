@@ -168,7 +168,7 @@ func (m *MeshSync) fetchMeshConfig(ctx context.Context) (*MeshConfig, error) {
 
 // ensureMeshTunnel creates or updates a mesh tunnel to a peer
 func (m *MeshSync) ensureMeshTunnel(peer *MeshPeer) error {
-	ifname := fmt.Sprintf("wg_mesh_%d", peer.NodeID)
+	ifname := fmt.Sprintf("dn42-wg-igp-%d", peer.NodeID)
 
 	// Build allowed IPs (peer's loopback addresses)
 	allowedIPs := []string{}
@@ -216,7 +216,7 @@ func (m *MeshSync) ensureMeshTunnel(peer *MeshPeer) error {
 
 // removeMeshTunnel removes a mesh tunnel
 func (m *MeshSync) removeMeshTunnel(peer *MeshPeer) {
-	ifname := fmt.Sprintf("wg_mesh_%d", peer.NodeID)
+	ifname := fmt.Sprintf("dn42-wg-igp-%d", peer.NodeID)
 	if err := m.wgExecutor.DeleteInterface(ifname); err != nil {
 		log.Printf("[MeshSync] Warning: failed to delete interface %s: %v", ifname, err)
 	}
