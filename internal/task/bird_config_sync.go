@@ -387,7 +387,7 @@ function is_valid_dn42_prefix6() -> bool {
 # ROA Validation
 # -----------------------------------------------------------------------------
 
-function roa_check() -> bool {
+function check_roa() -> bool {
     if (roa_check(dn42_roa, net, bgp_path.last) = ROA_VALID) then return true;
     if (roa_check(dn42_roa, net, bgp_path.last) = ROA_UNKNOWN) then return true;
     return false;
@@ -420,7 +420,7 @@ filter dn42_import_filter {
         bgp_large_community.add(LC_REJECT_PREFIX);
         reject "Invalid DN42 prefix";
     }
-    if (!roa_check()) then {
+    if (!check_roa()) then {
         bgp_large_community.add(LC_REJECT_ROA);
         reject "ROA check failed";
     }
