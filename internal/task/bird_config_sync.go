@@ -746,7 +746,7 @@ function tag_moenet_origin() {
 # -----------------------------------------------------------------------------
 function moenet_ibgp_import() -> bool {
     # Apply standard DN42 checks
-    if !is_dn42_prefix() then return false;
+    if !is_valid_dn42_prefix() then return false;
     
     # Apply latency-based local_pref first
     update_local_pref_from_latency();
@@ -761,7 +761,7 @@ function moenet_ibgp_import() -> bool {
 # iBGP export filter: tag with our origin
 # -----------------------------------------------------------------------------
 function moenet_ibgp_export() -> bool {
-    if !is_dn42_prefix() then return false;
+    if !is_valid_dn42_prefix() then return false;
     
     # Tag with our origin info for cold potato
     tag_moenet_origin();
