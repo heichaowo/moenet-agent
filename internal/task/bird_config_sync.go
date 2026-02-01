@@ -838,18 +838,25 @@ protocol direct direct1 {
 
 # =============================================================================
 # Static Protocol - Announce our aggregate prefixes to DN42
-# These are the prefixes registered in DN42 registry and ROA
+# Using blackhole type with LOW preference (10) so:
+# 1. iBGP routes (preference 100) and Babel routes (130) always win for internal traffic
+# 2. Blackhole routes are still exported to BGP for aggregate announcement
+# 3. Blackhole routes are rejected by kernel export (won't block internal traffic)
 # =============================================================================
 protocol static static_v4 {
-    ipv4;
+    ipv4 {
+        preference 10;  # Low preference so iBGP/Babel routes win
+    };
     # MoeNet IPv4 aggregate - matches ROA 172.22.188.0/26
-    route 172.22.188.0/26 unreachable;
+    route 172.22.188.0/26 blackhole;
 }
 
 protocol static static_v6 {
-    ipv6;
+    ipv6 {
+        preference 10;  # Low preference so iBGP/Babel routes win
+    };
     # MoeNet IPv6 aggregate - matches ROA fd00:4242:7777::/48
-    route fd00:4242:7777::/48 unreachable;
+    route fd00:4242:7777::/48 blackhole;
 }
 
 # =============================================================================
