@@ -144,7 +144,6 @@ func (i *IBGPSync) UpdatePeers(peers map[int]*MeshPeer) {
 // UpdatePeersFromAPI updates the peer list from API response
 func (i *IBGPSync) UpdatePeersFromAPI(apiPeers []BirdIBGPPeer) {
 	i.mu.Lock()
-	defer i.mu.Unlock()
 
 	// Convert API peers to internal format
 	newPeers := make(map[int]*MeshPeer)
@@ -158,8 +157,18 @@ func (i *IBGPSync) UpdatePeersFromAPI(apiPeers []BirdIBGPPeer) {
 		}
 	}
 	i.peers = newPeers
+	i.mu.Unlock()
 
 	log.Printf("[iBGP] Received %d peers from API", len(apiPeers))
+
+	// Trigger sync immediately after receiving peers
+	if len(apiPeers) > 0 {
+		go func() {
+			if err := i.Sync(context.Background()); err != nil {
+				log.Printf("[iBGP] Sync after update failed: %v", err)
+			}
+		}()
+	}
 }
 
 // generateConfig generates iBGP configuration for a peer
@@ -224,21 +233,22 @@ const ibgpTemplate = `# iBGP peer: {{.NodeName}} (Node {{.NodeID}})
 protocol bgp ibgp_{{.NodeID}} {
     local as 4242420998;
     neighbor {{.LoopbackIPv6}} as 4242420998;
+    source address {{.LocalLoopback}};
     description "iBGP to {{.NodeName}}";
-    direct;
+    multihop 8;
     {{- if .MarkAsRRClient}}
     rr client;
     {{- end}}
     
     ipv4 {
-        import all;
-        export all;
+        import where true;
+        export where true;
         next hop self;
     };
     
     ipv6 {
-        import all;
-        export all;
+        import where true;
+        export where true;
         next hop self;
     };
 }

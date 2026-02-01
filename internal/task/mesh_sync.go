@@ -171,10 +171,12 @@ func (m *MeshSync) ensureMeshTunnel(peer *MeshPeer) error {
 	ifname := fmt.Sprintf("dn42-wg-igp-%d", peer.NodeID)
 
 	// Build allowed IPs - allow all traffic through mesh for IGP routing
+	// IMPORTANT: Must include ff00::/8 for Babel multicast neighbor discovery
 	allowedIPs := []string{
-		"0.0.0.0/0", // All IPv4
-		"fd00::/8",  // DN42 IPv6 ULA
-		"fe80::/64", // Link-local
+		"fe80::/10",           // Link-local (full range, not just /64)
+		"ff00::/8",            // Multicast (required for Babel IGP)
+		"fd00:4242:7777::/48", // MoeNet loopback subnet (covers all regions: :101:, :203:, :302:, etc.)
+		"172.22.188.0/26",     // MoeNet IPv4 loopback subnet
 	}
 
 	// Create interface
