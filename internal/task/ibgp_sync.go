@@ -1,6 +1,7 @@
 package task
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -110,11 +111,15 @@ func (i *IBGPSync) Sync(ctx context.Context) error {
 
 		// Generate iBGP config file
 		filename := filepath.Join(i.ibgpConfDir, fmt.Sprintf("ibgp_%d.conf", peer.NodeID))
-		if err := i.generateConfig(peer, filename); err != nil {
+		peerChanged, err := i.generateConfig(peer, filename)
+		if err != nil {
 			log.Printf("[iBGP] Failed to generate config for %s: %v", peer.NodeName, err)
 			continue
 		}
-		changed = true
+		if peerChanged {
+			changed = true
+			log.Printf("[iBGP] Config changed for %s", peer.NodeName)
+		}
 	}
 
 	// Clean up stale configs (files not matching current peers)
@@ -172,18 +177,8 @@ func (i *IBGPSync) UpdatePeersFromAPI(apiPeers []BirdIBGPPeer) {
 }
 
 // generateConfig generates iBGP configuration for a peer
-func (i *IBGPSync) generateConfig(peer *MeshPeer, filename string) error {
-	// Check if already exists with same content
-	if i.configUnchanged(peer, filename) {
-		return nil
-	}
-
-	f, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
+// Returns (changed bool, err error) - changed is true only if file was actually modified
+func (i *IBGPSync) generateConfig(peer *MeshPeer, filename string) (bool, error) {
 	// Determine local node type from config
 	localIsRR := strings.Contains(strings.ToLower(i.config.Node.Name), "-rr")
 
@@ -201,18 +196,26 @@ func (i *IBGPSync) generateConfig(peer *MeshPeer, filename string) error {
 		"LocalLoopback":  i.config.WireGuard.DN42IPv6,
 	}
 
-	return i.ibgpTemplate.Execute(f, data)
-}
-
-// configUnchanged checks if the config file exists and is unchanged
-//
-//nolint:unused,unparam // peer reserved for future config comparison
-func (i *IBGPSync) configUnchanged(_ *MeshPeer, filename string) bool {
-	// Simple check: if file exists and peer hasn't changed, skip
-	if _, err := os.Stat(filename); err != nil {
-		return false // File doesn't exist
+	// Generate config to buffer first
+	var buf bytes.Buffer
+	if err := i.ibgpTemplate.Execute(&buf, data); err != nil {
+		return false, err
 	}
-	return false // For now, always regenerate
+	newContent := buf.Bytes()
+
+	// Compare with existing file content
+	existingContent, err := os.ReadFile(filename)
+	if err == nil && bytes.Equal(existingContent, newContent) {
+		// File exists and content is identical - no change needed
+		return false, nil
+	}
+
+	// Write new content (file doesn't exist or content differs)
+	if err := os.WriteFile(filename, newContent, 0644); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // removePeerConfig removes the iBGP config for a peer
