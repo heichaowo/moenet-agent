@@ -455,9 +455,17 @@ filter dn42_import_filter {
         bgp_large_community.add(LC_REJECT_PATH_LEN);
         reject "AS path too long";
     }
-    if (!is_valid_dn42_prefix()) then {
-        bgp_large_community.add(LC_REJECT_PREFIX);
-        reject "Invalid DN42 prefix";
+    # Check prefix validity based on address family
+    if (net.type = NET_IP4) then {
+        if (!is_valid_dn42_prefix()) then {
+            bgp_large_community.add(LC_REJECT_PREFIX);
+            reject "Invalid DN42 prefix";
+        }
+    } else {
+        if (!is_valid_dn42_prefix6()) then {
+            bgp_large_community.add(LC_REJECT_PREFIX);
+            reject "Invalid DN42 prefix";
+        }
     }
     if (!check_roa()) then {
         bgp_large_community.add(LC_REJECT_ROA);
@@ -481,7 +489,12 @@ function add_self_origin_communities() {
 }
 
 filter dn42_export_filter {
-    if (!is_valid_dn42_prefix()) then reject;
+    # Check prefix validity based on address family
+    if (net.type = NET_IP4) then {
+        if (!is_valid_dn42_prefix()) then reject;
+    } else {
+        if (!is_valid_dn42_prefix6()) then reject;
+    }
     
     # Self-originated routes: add our communities
     if (source = RTS_STATIC || source = RTS_DEVICE) then {
@@ -1008,6 +1021,35 @@ template bgp dn42_internal {
             accept; 
         };
         add paths rx;
+    };
+}
+
+# =============================================================================
+# DN42 Global Route Collector (GRC) - AS4242422602
+# https://wiki.dn42.dev/services/Route-Collector
+# GRC only COLLECTS routes (does not announce routes back)
+# =============================================================================
+protocol bgp Route_Collector from dn42_peer {
+    description "DN42 GRC (Route Collector) IPv6";
+    neighbor fd42:d42:d42:179::1 as 4242422602;
+    source address {{.Node.LoopbackIPv6}};
+    
+    # Multihop required - GRC is not directly connected
+    multihop 64;
+    
+    # Don't import anything from GRC (they only collect)
+    ipv4 {
+        import none;
+        export filter dn42_export_filter;
+        extended next hop on;
+        # Export all available paths to the collector (per DN42 Wiki)
+        add paths tx;
+    };
+    ipv6 {
+        import none;
+        export filter dn42_export_filter;
+        # Export all available paths to the collector (per DN42 Wiki)
+        add paths tx;
     };
 }
 
