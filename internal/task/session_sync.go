@@ -160,6 +160,12 @@ func (s *SessionSync) processSession(ctx context.Context, session *BgpSession) e
 		return s.deleteSession(ctx, session)
 	case StatusProblem:
 		return s.handleProblemSession(ctx, session)
+	case StatusDisabled:
+		// Disabled sessions: ensure config is removed, don't report error
+		return s.cleanupDisabledSession(ctx, session)
+	case StatusPendingApproval:
+		// Pending sessions: skip silently, waiting for admin approval
+		return nil
 	default:
 		log.Printf("[SessionSync] Unknown status %d for session %s", session.Status, session.UUID)
 		return nil
@@ -282,6 +288,33 @@ func (s *SessionSync) deleteSession(ctx context.Context, session *BgpSession) er
 func (s *SessionSync) handleProblemSession(_ context.Context, session *BgpSession) error {
 	log.Printf("[SessionSync] Handling problem session AS%d", session.ASN)
 	// TODO: Attempt to reconfigure
+	return nil
+}
+
+// cleanupDisabledSession removes config for a disabled session
+// Unlike deleteSession, it doesn't report back to CP (session stays disabled in DB)
+func (s *SessionSync) cleanupDisabledSession(_ context.Context, session *BgpSession) error {
+	log.Printf("[SessionSync] Cleaning up disabled session AS%d", session.ASN)
+
+	// 1. Remove BIRD configuration
+	peerName := fmt.Sprintf("dn42_%d", session.ASN)
+	if err := s.birdConfig.RemoveSession(peerName); err != nil {
+		log.Printf("[SessionSync] Warning: failed to remove BIRD config for disabled session: %v", err)
+	}
+
+	// 2. Reload BIRD
+	if err := s.birdPool.Configure(); err != nil {
+		log.Printf("[SessionSync] Warning: BIRD reconfigure failed: %v", err)
+	}
+
+	// 3. Remove WireGuard interface if exists
+	if session.Type == "wireguard" && session.Interface != "" {
+		if err := s.wgExecutor.DeleteInterface(session.Interface); err != nil {
+			log.Printf("[SessionSync] Warning: failed to delete WireGuard interface: %v", err)
+		}
+	}
+
+	// Note: Don't report to CP - session remains disabled until admin action
 	return nil
 }
 
