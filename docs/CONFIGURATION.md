@@ -122,7 +122,7 @@ See [config.example.json](../configs/config.example.json) for complete example.
 These can override config file settings:
 
 | Variable           | Config Path        | Description        |
-|--------------------|--------------------|--------------------||
+|--------------------|--------------------|--------------------|
 | `MOENET_NODE_NAME` | `node.name`        | Node name          |
 | `MOENET_NODE_ID`   | `node.id`          | Node ID            |
 | `MOENET_CP_URL`    | `controlPlane.url` | Control Plane URL  |

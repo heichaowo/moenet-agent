@@ -1,250 +1,267 @@
 # MoeNet Agent
 
 [![Go Version](https://img.shields.io/badge/Go-1.25%2B-blue.svg)](https://golang.org)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-A Go agent for automated BGP peering session management on MoeNet DN42 infrastructure nodes. Communicates with the MoeNet Control Plane to orchestrate BGP session lifecycle, WireGuard tunnel configuration, and real-time performance metrics.
+A Go-based daemon for automated BGP peering on [DN42](https://dn42.dev). Manages WireGuard tunnels, BIRD routing configuration, and real-time metrics—all orchestrated by a central Control Plane.
+
+## Table of Contents
+
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+- [Background Tasks](#background-tasks)
+- [API Reference](#api-reference)
+- [BGP Communities](#bgp-communities)
+- [Development](#development)
+- [Documentation](#documentation)
+- [License](#license)
 
 ## Features
 
-- **Session Lifecycle Management**: Automated setup, monitoring, and teardown of BGP peering sessions
-- **BIRD Integration**: Connection pool for efficient BIRD control socket communication
-- **BIRD Config Rendering**: Template-based configuration generation from Control Plane policies
-- **DN42 Communities**: Proper community tagging only on self-originated routes
-- **Cold Potato Routing**: Internal routing optimization via MoeNet Large Communities
-- **WireGuard Management**: Direct interface management without wg-quick
-- **P2P Mesh IGP**: WireGuard-based IGP underlay with Babel
-- **Real-time Metrics**: RTT measurement, route statistics, traffic monitoring
-- **Graceful Shutdown**: Context-based cancellation with proper resource cleanup
+- **Automated BGP Session Management** - Complete lifecycle from creation to teardown
+- **BIRD 3.x Integration** - Connection pool with template-based config generation
+- **WireGuard Management** - Direct kernel interface control (no wg-quick)
+- **P2P Mesh IGP** - WireGuard-based underlay with Babel for internal routing
+- **Cold Potato Routing** - Keep traffic inside the backbone via Large Communities
+- **Real-time Metrics** - RTT measurement, route statistics, traffic monitoring
+- **Auto-update** - GitHub release-based self-update (optional)
+- **Graceful Shutdown** - Context-based cancellation with 30s timeout
 
-## BGP Communities
+## Quick Start
 
-The agent generates BIRD filters that tag routes with DN42 community information:
+### Bootstrap Mode (Recommended)
 
-### Self-Originated Routes
-
-Only routes originated by MoeNet (static/device) receive community tags:
-
-| Community | Description |
-| :--- | :--- |
-| `(64511, 1-9)` | Latency tier based on RTT measurement |
-| `(64511, 21-25)` | Bandwidth tier |
-| `(64511, 31-34)` | Encryption type (WireGuard = 33) |
-| `(64511, 41-53)` | Region code |
-| `(4242420998, 100, <NodeID>)` | Accepted at node |
-
-### Learned Routes
-
-BGP-learned routes pass through **without modification**, preserving upstream communities.
-
-## Architecture
-
-```mermaid
-graph TB
-    subgraph "Control Plane"
-        CP[FastAPI Server]
-        DB[(PostgreSQL)]
-    end
-    
-    subgraph "Agent Node"
-        Agent[Go Agent]
-        BIRD[BIRD 3.x]
-        WG[WireGuard]
-    end
-    
-    Agent -->|GET /sessions| CP
-    Agent -->|GET /bird-config| CP
-    Agent -->|POST /heartbeat| CP
-    Agent -->|POST /modify| CP
-    Agent -->|POST /report| CP
-    
-    Agent -->|Render templates| BIRD
-    Agent -->|birdc configure| BIRD
-    Agent -->|wg set| WG
-```
-
-## Session Lifecycle
-
-```mermaid
-stateDiagram-v2
-    [*] --> PENDING: User creates peer
-    PENDING --> QUEUED_FOR_SETUP: Admin approves
-    QUEUED_FOR_SETUP --> ENABLED: Agent configures
-    ENABLED --> PROBLEM: Config/connectivity issue
-    PROBLEM --> ENABLED: Issue resolved
-    ENABLED --> QUEUED_FOR_DELETE: User/admin deletes
-    QUEUED_FOR_DELETE --> DELETED: Agent removes config
-    DELETED --> [*]
-```
-
-| Status             | Description                              |
-|--------------------|-----------------------------------------|
-| `PENDING`          | Awaiting admin approval                  |
-| `QUEUED_FOR_SETUP` | Approved, waiting for agent to configure |
-| `ENABLED`          | Active and configured                    |
-| `PROBLEM`          | Configuration or connectivity issue      |
-| `QUEUED_FOR_DELETE`| Marked for removal                       |
-| `DELETED`          | Removed from system                      |
-| `TEARDOWN`         | Emergency teardown (invalid config)      |
-
-## Background Tasks
-
-| Task               | Interval | Purpose                                  |
-|--------------------|----------|------------------------------------------|
-| `heartbeatTask`    | 30s      | Report node health, version, system metrics |
-| `sessionSyncTask`  | 60s      | Sync BGP sessions from CP, apply changes |
-| `birdConfigTask`   | 300s     | Sync BIRD policy from CP, render templates |
-| `metricTask`       | 60s      | Collect BGP stats, report to CP          |
-| `rttTask`          | 300s     | Measure RTT to peers, update latency tier |
-| `meshSyncTask`     | 120s     | Sync P2P WireGuard IGP mesh              |
-| `ibgpSyncTask`     | 120s     | Sync iBGP peer configurations            |
-
-## Installation
-
-### Binary Installation
+The easiest way to deploy is via bootstrap script from the Control Plane:
 
 ```bash
-# Download latest release
-curl -L -o moenet-agent https://github.com/moenet/moenet-agent/releases/latest/download/moenet-agent-linux-amd64
+# 1. Generate bootstrap script via Telegram Bot
+#    Use /addnode and /bootstrap commands
+
+# 2. Run the generated script on your server
+curl -fsSL "https://api.moenet.work/bootstrap/YOUR_TOKEN" | bash
+
+# Agent starts automatically and connects to Control Plane
+```
+
+### Manual Installation
+
+```bash
+# Download binary
+curl -L -o moenet-agent \
+  https://github.com/moenet/moenet-agent/releases/latest/download/moenet-agent-linux-amd64
 chmod +x moenet-agent
 
-# Create directories
-mkdir -p /opt/moenet-agent/logs
+# Create minimal config
+cat > config.json << 'EOF'
+{
+  "bootstrap": {
+    "apiUrl": "https://api.moenet.work",
+    "nodeName": "your-node-name",
+    "token": "your-agent-token"
+  },
+  "server": { "listen": ":24368" }
+}
+EOF
 
-# Copy configuration
-cp config.example.json /opt/moenet-agent/config.json
-# Edit config.json with your settings
-```
-
-### Building from Source
-
-```bash
-git clone https://github.com/moenet/moenet-agent.git
-cd moenet-agent
-go build -o moenet-agent ./cmd/moenet-agent
+# Run
+./moenet-agent -c config.json
 ```
 
 ### Systemd Service
 
 ```bash
-cp moenet-agent.service /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable moenet-agent
-systemctl start moenet-agent
+# Copy service file
+sudo cp moenet-agent.service /etc/systemd/system/
+
+# Enable and start
+sudo systemctl daemon-reload
+sudo systemctl enable --now moenet-agent
+
+# Check status
+sudo systemctl status moenet-agent
+sudo journalctl -u moenet-agent -f
 ```
 
 ## Configuration
 
-### Bootstrap Mode (Recommended)
+### Bootstrap Mode
 
-Agent can fetch configuration from Control Plane at startup:
+Agent fetches configuration from Control Plane at startup:
 
 ```json
 {
   "bootstrap": {
     "apiUrl": "https://api.moenet.work",
-    "nodeName": "jp-edge",
+    "nodeName": "jp1",
     "token": "your-agent-token"
   },
   "server": { "listen": ":24368" }
 }
 ```
 
-The agent fetches `nodeId`, `region`, `loopback IPs`, and other settings from the database.
+This automatically retrieves: `nodeId`, `region`, `loopback IPs`, `ASN`, and other settings.
 
 ### Full Configuration
 
-See [configs/config.example.json](configs/config.example.json) for a complete example.
+For complete customization, see [configs/config.example.json](configs/config.example.json).
 
-| Section              | Key    | Description                      |
-|----------------------|--------|----------------------------------|
-| `node.name`          | string | Node hostname (e.g., `hk-edge`)  |
-| `node.id`            | int    | Unique node ID (1-62)            |
-| `controlPlane.url`   | string | Control Plane API URL            |
-| `controlPlane.token` | string | Agent authentication token       |
-| `bird.controlSocket` | string | BIRD control socket path         |
-| `bird.peerConfDir`   | string | Directory for peer configs       |
+| Section | Key | Description |
+|---------|-----|-------------|
+| `node.name` | string | Node hostname (e.g., `jp1`) |
+| `node.id` | int | Unique node ID (1-62) |
+| `controlPlane.url` | string | Control Plane API URL |
+| `controlPlane.token` | string | Agent authentication token |
+| `bird.controlSocket` | string | BIRD control socket path |
+| `bird.peerConfDir` | string | Directory for peer configs |
+| `autoUpdate.enabled` | bool | Enable auto-update from GitHub |
 
-## API Endpoints
+### Environment Variables
 
-The agent exposes a minimal HTTP API:
+| Variable | Config Path | Description |
+|----------|-------------|-------------|
+| `MOENET_NODE_NAME` | `node.name` | Node name |
+| `MOENET_CP_URL` | `controlPlane.url` | Control Plane URL |
+| `MOENET_CP_TOKEN` | `controlPlane.token` | Agent token |
 
-| Endpoint  | Method | Description                |
-|-----------|--------|----------------------------|
-| `/status` | GET    | Agent status and version   |
-| `/sync`   | GET    | Trigger manual session sync |
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         moenet-agent                            │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│  │   Task       │  │  HTTP Client │  │  HTTP Server │           │
+│  │  Scheduler   │  │  (CP comms)  │  │  (status)    │           │
+│  └──────┬───────┘  └──────┬───────┘  └──────────────┘           │
+│         │                 │                                     │
+│  ┌──────▼─────────────────▼──────┐                              │
+│  │         Core Engine           │                              │
+│  │   • Session Sync              │                              │
+│  │   • Config Rendering          │                              │
+│  │   • iBGP Mesh Sync            │                              │
+│  └──────┬─────────────────┬──────┘                              │
+│         │                 │                                     │
+│  ┌──────▼───────┐  ┌──────▼───────┐  ┌──────────────┐           │
+│  │ BIRD Manager │  │  WG Manager  │  │   Firewall   │           │
+│  │  (birdc)     │  │  (wg/ip)     │  │   (nftables) │           │
+│  └──────────────┘  └──────────────┘  └──────────────┘           │
+└─────────────────────────────────────────────────────────────────┘
+         │                           │                    │
+         ▼                           ▼                    ▼
+    BIRD 3.x                   WireGuard              nftables
+```
+
+### Session Lifecycle
+
+| Status | Code | Description |
+|--------|------|-------------|
+| PENDING_REVIEW | 3 | Awaiting admin approval |
+| QUEUED_FOR_SETUP | 4 | Approved, agent will configure |
+| ACTIVE | 1 | Running normally |
+| ERROR | 2 | Configuration or connectivity issue |
+| QUEUED_FOR_DELETE | 5 | Marked for removal |
+
+## Background Tasks
+
+| Task | Interval | Purpose |
+|------|----------|---------|
+| `heartbeat` | 30s | Report health, version, system metrics |
+| `sessionSync` | 60s | Sync BGP sessions, configure WG+BIRD |
+| `birdConfigSync` | 300s | Sync BIRD filters and communities |
+| `metricCollector` | 60s | Collect BGP stats, report to CP |
+| `rttMeasurement` | 300s | Measure RTT to peers |
+| `meshSync` | 120s | Sync P2P WireGuard IGP mesh |
+| `ibgpSync` | 120s | Sync iBGP peer configurations |
+
+## API Reference
+
+### Agent Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/status` | GET | Agent status and version |
+| `/sync` | GET | Trigger manual session sync |
+| `/metrics` | GET | Prometheus metrics |
+| `/maintenance` | GET | Maintenance mode status |
+| `/maintenance/start` | POST | Enable maintenance mode |
+| `/maintenance/stop` | POST | Disable maintenance mode |
+| `/restart` | POST | Restart specific WG interface |
+
+### Control Plane Communication
+
+The agent polls these Control Plane endpoints:
+
+| Endpoint | Interval | Purpose |
+|----------|----------|---------|
+| `GET /agent/:router/sessions` | 60s | Fetch BGP sessions |
+| `GET /agent/:router/bird-config` | 300s | Fetch BIRD config |
+| `GET /agent/:router/mesh` | 120s | Fetch mesh peers |
+| `POST /agent/:router/heartbeat` | 30s | Report health |
+| `POST /agent/:router/modify` | On change | Update session status |
+
+## BGP Communities
+
+### Self-Originated Routes Only
+
+The agent tags **only self-originated routes** (static/device) with DN42 communities:
+
+| Community | Description |
+|-----------|-------------|
+| `(64511, 1-9)` | Latency tier |
+| `(64511, 21-25)` | Bandwidth tier |
+| `(64511, 31-34)` | Encryption type |
+| `(64511, 41-53)` | Region code |
+
+> **Important**: BGP-learned routes pass through unchanged to preserve upstream communities.
+
+### Cold Potato Routing
+
+MoeNet Large Communities for internal routing optimization:
+
+| Type | Format | Purpose |
+|------|--------|---------|
+| Origin Node | `(4242420998, 3, nodeId)` | Ingress node |
+| Bandwidth | `(4242420998, 5, mbps)` | Link capacity |
 
 ## Development
 
+### Build
+
 ```bash
-# Run tests
-go test ./...
+# Clone
+git clone https://github.com/moenet/moenet-agent.git
+cd moenet-agent
+
+# Build
+go build -o moenet-agent ./cmd/moenet-agent
 
 # Build with version info
-go build -ldflags="-X main.Version=1.0.0 -X main.Commit=$(git rev-parse --short HEAD)" ./cmd/moenet-agent
+go build -ldflags="-X main.Version=1.0.0 -X main.Commit=$(git rev-parse --short HEAD)" \
+  -o moenet-agent ./cmd/moenet-agent
 ```
 
-## Robustness Features
+### Test
 
-### HTTP Retry with Backoff
-
-All Control Plane HTTP requests use exponential backoff retry:
-
-```go
-import "github.com/moenet/moenet-agent/internal/httpclient"
-
-client := httpclient.New(nil, httpclient.RetryConfig{
-    MaxRetries:   3,
-    InitialDelay: time.Second,
-    MaxDelay:     30 * time.Second,
-    Multiplier:   2.0,
-})
-
-resp, err := client.Get(ctx, url)
+```bash
+go test ./...
 ```
 
-Features:
+### Lint
 
-- Configurable max retries and delays
-- Jitter to prevent thundering herd
-- Context-aware cancellation
-- Automatic 5xx and 429 retry
-
-### Circuit Breaker
-
-Prevents cascading failures when Control Plane is unavailable:
-
-```go
-import "github.com/moenet/moenet-agent/internal/circuitbreaker"
-
-cb := circuitbreaker.New(circuitbreaker.Config{
-    FailureThreshold: 5,
-    SuccessThreshold: 3,
-    OpenDuration:     30 * time.Second,
-})
-
-err := cb.Execute(func() error {
-    return sendRequest()
-})
+```bash
+golangci-lint run
 ```
 
-State transitions:
+## Documentation
 
-- **Closed** → **Open**: After 5 consecutive failures
-- **Open** → **Half-Open**: After 30s timeout
-- **Half-Open** → **Closed**: After 3 successes
-- **Half-Open** → **Open**: On any failure
-
-Configuration in `config.json`:
-
-```json
-{
-  "controlPlane": {
-    "maxRetries": 3,
-    "retryInitialDelay": 1000
-  }
-}
-```
+- [Architecture](docs/ARCHITECTURE.md) - Internal design and components
+- [API Reference](docs/API.md) - Detailed endpoint documentation
+- [Configuration](docs/CONFIGURATION.md) - All configuration options
+- [BIRD Config](docs/BIRD_CONFIG.md) - BIRD template rendering
+- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
 
 ## License
 
-No License
+MIT License - see [LICENSE](LICENSE)

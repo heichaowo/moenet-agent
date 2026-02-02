@@ -16,7 +16,7 @@ func TestLoadWithBootstrap_FullConfig(t *testing.T) {
 		"node": {"name": "test-node", "id": 1},
 		"controlPlane": {"url": "https://api.test.com", "token": "test-token"},
 		"bird": {"controlSocket": "/var/run/bird.ctl"},
-		"wireguard": {"configDir": "/etc/wireguard"},
+		"wireguard": {"configDir": "/etc/wireguard", "dn42IPv4": "172.22.188.1"},
 		"metric": {"pingTimeout": 5},
 		"autoUpdate": {"enabled": true}
 	}`
