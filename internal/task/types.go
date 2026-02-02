@@ -15,6 +15,8 @@ type BgpSession struct {
 	IPv6          string   `json:"ipv6"`
 	IPv6LinkLocal string   `json:"ipv6LinkLocal"`
 	MTU           int      `json:"mtu"`
+	Port          int      `json:"port"`       // Local WireGuard port
+	LocalPort     int      `json:"localPort"`  // Alias for port
 	Extensions    []string `json:"extensions"` // mp-bgp, extended-nexthop
 	Policy        string   `json:"policy"`
 	LastError     string   `json:"lastError"`

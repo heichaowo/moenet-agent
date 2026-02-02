@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -25,12 +26,14 @@ type BootstrapConfig struct {
 func LoadWithBootstrap(path string) (*Config, error) {
 	// First try to load as full config
 	fullCfg, err := Load(path)
-	if err == nil && fullCfg.Node.Name != "" {
-		// Full config loaded successfully, use it
+	if err == nil && fullCfg.Node.Name != "" && fullCfg.WireGuard.DN42IPv4 != "" {
+		// Full config loaded successfully with complete WireGuard config, use it
+		log.Printf("[Config] Loaded full config for node %s", fullCfg.Node.Name)
 		return fullCfg, nil
 	}
 
 	// Try bootstrap mode
+	log.Printf("[Config] Attempting bootstrap mode...")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
@@ -45,11 +48,17 @@ func LoadWithBootstrap(path string) (*Config, error) {
 		return nil, fmt.Errorf("bootstrap config missing required fields (apiUrl, nodeName)")
 	}
 
+	log.Printf("[Config] Bootstrap: fetching config from %s for node %s",
+		bootstrap.Bootstrap.APIURL, bootstrap.Bootstrap.NodeName)
+
 	// Fetch config from control plane
 	remoteCfg, err := fetchConfigFromCP(bootstrap)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch config from control plane: %w", err)
 	}
+
+	log.Printf("[Config] Bootstrap: received config with node.id=%d, dn42IPv4=%s",
+		remoteCfg.Node.ID, remoteCfg.WireGuard.DN42IPv4)
 
 	// Merge local and remote config
 	cfg := mergeConfig(bootstrap, remoteCfg)

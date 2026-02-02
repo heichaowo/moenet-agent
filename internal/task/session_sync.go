@@ -13,6 +13,7 @@ import (
 
 	"github.com/moenet/moenet-agent/internal/bird"
 	"github.com/moenet/moenet-agent/internal/config"
+	"github.com/moenet/moenet-agent/internal/firewall"
 	"github.com/moenet/moenet-agent/internal/wireguard"
 )
 
@@ -23,6 +24,7 @@ type SessionSync struct {
 	birdPool   *bird.Pool
 	birdConfig *bird.ConfigGenerator
 	wgExecutor *wireguard.Executor
+	fwExecutor *firewall.Executor
 
 	// Local session state
 	mu       sync.RWMutex
@@ -30,7 +32,7 @@ type SessionSync struct {
 }
 
 // NewSessionSync creates a new session sync handler
-func NewSessionSync(cfg *config.Config, birdPool *bird.Pool, birdConfig *bird.ConfigGenerator, wgExecutor *wireguard.Executor) *SessionSync {
+func NewSessionSync(cfg *config.Config, birdPool *bird.Pool, birdConfig *bird.ConfigGenerator, wgExecutor *wireguard.Executor, fwExecutor *firewall.Executor) *SessionSync {
 	return &SessionSync{
 		config: cfg,
 		httpClient: &http.Client{
@@ -39,6 +41,7 @@ func NewSessionSync(cfg *config.Config, birdPool *bird.Pool, birdConfig *bird.Co
 		birdPool:   birdPool,
 		birdConfig: birdConfig,
 		wgExecutor: wgExecutor,
+		fwExecutor: fwExecutor,
 		sessions:   make(map[string]*BgpSession),
 	}
 }
@@ -107,6 +110,21 @@ func (s *SessionSync) Sync(ctx context.Context) error {
 	s.mu.Lock()
 	s.sessions = remoteMap
 	s.mu.Unlock()
+
+	// Sync firewall ports
+	if s.fwExecutor != nil {
+		var expectedPorts []int
+		for _, session := range sessions {
+			if session.Port > 0 && (session.Status == StatusEnabled || session.Status == StatusQueuedForSetup) {
+				expectedPorts = append(expectedPorts, session.Port)
+			}
+		}
+		if added, removed, err := s.fwExecutor.SyncPorts(expectedPorts); err != nil {
+			log.Printf("[SessionSync] Firewall sync error: %v", err)
+		} else if added > 0 || removed > 0 {
+			log.Printf("[SessionSync] Firewall synced: %d added, %d removed", added, removed)
+		}
+	}
 
 	return nil
 }

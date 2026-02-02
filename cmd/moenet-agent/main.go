@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,7 +16,9 @@ import (
 	"github.com/moenet/moenet-agent/internal/api"
 	"github.com/moenet/moenet-agent/internal/bird"
 	"github.com/moenet/moenet-agent/internal/config"
+	"github.com/moenet/moenet-agent/internal/firewall"
 	"github.com/moenet/moenet-agent/internal/httpclient"
+	"github.com/moenet/moenet-agent/internal/loopback"
 	"github.com/moenet/moenet-agent/internal/maintenance"
 	"github.com/moenet/moenet-agent/internal/task"
 	"github.com/moenet/moenet-agent/internal/updater"
@@ -80,6 +83,16 @@ func main() {
 		log.Fatalf("Failed to initialize WireGuard executor: %v", err)
 	}
 
+	// Initialize loopback executor and setup dummy0 interface
+	lbExecutor := loopback.NewExecutor(slog.Default())
+	if cfg.WireGuard.DN42IPv4 != "" || cfg.WireGuard.DN42IPv6 != "" {
+		if err := lbExecutor.SetupLoopbackWithIPs(cfg.WireGuard.DN42IPv4, cfg.WireGuard.DN42IPv6); err != nil {
+			log.Printf("Warning: failed to setup loopback: %v", err)
+		} else {
+			log.Printf("Loopback configured: %s, %s", cfg.WireGuard.DN42IPv4, cfg.WireGuard.DN42IPv6)
+		}
+	}
+
 	// Log startup
 	log.Printf("%s %s starting...\n", serverSignature, Version)
 	log.Printf("  Node: %s\n", cfg.Node.Name)
@@ -115,7 +128,12 @@ func main() {
 
 	// Create background tasks
 	heartbeat := task.NewHeartbeat(cfg)
-	sessionSync := task.NewSessionSync(cfg, birdPool, birdConfig, wgExecutor)
+
+	// Initialize firewall executor for port management
+	fwExecutor := firewall.NewExecutor(slog.Default())
+	log.Println("Firewall executor initialized")
+
+	sessionSync := task.NewSessionSync(cfg, birdPool, birdConfig, wgExecutor, fwExecutor)
 	metricCollector := task.NewMetricCollector(cfg, birdPool)
 	meshSync := task.NewMeshSync(cfg, wgExecutor)
 	ibgpSync, err := task.NewIBGPSync(cfg, birdPool)
