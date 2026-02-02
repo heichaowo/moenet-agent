@@ -108,6 +108,9 @@ func main() {
 	// Create restart handler
 	restartHandler := api.NewRestartHandler(birdPool, wgExecutor)
 
+	// Create tools handler for network diagnostics
+	toolsHandler := api.NewToolsHandler(birdPool, cfg.ControlPlane.Token)
+
 	// Set up HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", apiHandler.HandleStatus)
@@ -117,6 +120,13 @@ func main() {
 	mux.HandleFunc("/maintenance/start", apiHandler.HandleMaintenanceStart)
 	mux.HandleFunc("/maintenance/stop", apiHandler.HandleMaintenanceStop)
 	mux.HandleFunc("/restart", restartHandler.HandleRestart)
+
+	// Network diagnostic tools
+	mux.HandleFunc("/ping", toolsHandler.HandlePing)
+	mux.HandleFunc("/tcping", toolsHandler.HandleTcping)
+	mux.HandleFunc("/trace", toolsHandler.HandleTrace)
+	mux.HandleFunc("/route", toolsHandler.HandleRoute)
+	mux.HandleFunc("/path", toolsHandler.HandlePath)
 
 	server := &http.Server{
 		Addr:         cfg.Server.Listen,
