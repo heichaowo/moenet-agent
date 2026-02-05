@@ -2,6 +2,7 @@ name: Build and Release
 
 on:
   push:
+    branches: [dev]
     tags:
       - 'v*'
   workflow_dispatch:
@@ -36,8 +37,14 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "IS_DEV=false" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/dev" ]; then
+            COMMIT=$(git rev-parse --short HEAD)
+            echo "VERSION=dev-${COMMIT}" >> $GITHUB_OUTPUT
+            echo "IS_DEV=true" >> $GITHUB_OUTPUT
           else
             echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            echo "IS_DEV=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Build binary
@@ -64,7 +71,7 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
 
@@ -82,8 +89,14 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "IS_DEV=false" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/dev" ]; then
+            COMMIT=$(git rev-parse --short HEAD)
+            echo "VERSION=dev-${COMMIT}" >> $GITHUB_OUTPUT
+            echo "IS_DEV=true" >> $GITHUB_OUTPUT
           else
             echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            echo "IS_DEV=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Prepare release assets
@@ -108,11 +121,13 @@ jobs:
           tag_name: ${{ steps.version.outputs.VERSION }}
           name: MoeNet Agent ${{ steps.version.outputs.VERSION }}
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.version.outputs.IS_DEV == 'true' }}
           files: |
             release/*
           body: |
             ## MoeNet Agent ${{ steps.version.outputs.VERSION }}
+            
+            ${{ steps.version.outputs.IS_DEV == 'true' && '⚠️ **Development Build** - This is an unstable development version.' || '' }}
             
             ### Downloads
             - `moenet-agent-linux-amd64` - Linux x86_64
@@ -124,7 +139,7 @@ jobs:
             ### Installation
             ```bash
             curl -L -o /opt/moenet-agent/moenet-agent \
-              https://github.com/moenet/moenet-agent/releases/download/${{ steps.version.outputs.VERSION }}/moenet-agent-linux-amd64
+              https://github.com/heichaowo/moenet-agent/releases/download/${{ steps.version.outputs.VERSION }}/moenet-agent-linux-amd64
             chmod +x /opt/moenet-agent/moenet-agent
             systemctl restart moenet-agent
             ```
