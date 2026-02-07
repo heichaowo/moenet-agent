@@ -244,6 +244,14 @@ func (s *SessionSync) setupSession(ctx context.Context, session *BgpSession) err
 		if err := s.wgExecutor.SetMTU(session.Interface, mtu); err != nil {
 			log.Printf("[SessionSync] Warning: failed to set MTU: %v", err)
 		}
+
+		// Assign local link-local address for BGP neighbor communication
+		linkLocalAddr := deriveLLAFromLoopback(s.config.WireGuard.DN42IPv6)
+		if linkLocalAddr != "" {
+			if err := s.wgExecutor.AddAddress(session.Interface, linkLocalAddr); err != nil {
+				log.Printf("[SessionSync] Warning: failed to add link-local address to %s: %v", session.Interface, err)
+			}
+		}
 	}
 
 	// 2. Generate BIRD configuration

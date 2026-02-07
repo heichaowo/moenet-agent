@@ -2,6 +2,7 @@ package wireguard
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -116,8 +117,11 @@ func (e *Executor) CreateInterface(name string, listenPort int, peerKey, preshar
 		args = append(args, "preshared-key", pskFile.Name())
 	}
 
-	if err := exec.Command("wg", args...).Run(); err != nil {
-		return fmt.Errorf("failed to configure peer: %w", err)
+	cmd = exec.Command("wg", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to configure peer: %w (stderr: %s)", err, stderr.String())
 	}
 
 	// Bring interface up
