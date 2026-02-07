@@ -186,6 +186,7 @@ func (m *MeshSync) ensureMeshTunnel(peer *MeshPeer) error {
 		ifname,
 		listenPort,
 		peer.PublicKey,
+		"", // No PSK for mesh tunnels
 		peer.Endpoint,
 		allowedIPs,
 		25, // Keepalive

@@ -71,7 +71,7 @@ func (e *Executor) PublicKey() string {
 }
 
 // CreateInterface creates a WireGuard interface
-func (e *Executor) CreateInterface(name string, listenPort int, peerKey, endpoint string, allowedIPs []string, keepalive int) error {
+func (e *Executor) CreateInterface(name string, listenPort int, peerKey, presharedKey, endpoint string, allowedIPs []string, keepalive int) error {
 	// Create interface if it doesn't exist
 	if !e.interfaceExists(name) {
 		if err := exec.Command("ip", "link", "add", "dev", name, "type", "wireguard").Run(); err != nil {
@@ -100,6 +100,20 @@ func (e *Executor) CreateInterface(name string, listenPort int, peerKey, endpoin
 	}
 	if keepalive > 0 {
 		args = append(args, "persistent-keepalive", fmt.Sprintf("%d", keepalive))
+	}
+	if presharedKey != "" {
+		// Write PSK to temp file (wg requires file path for preshared-key)
+		pskFile, err := os.CreateTemp("", "wg-psk-*")
+		if err != nil {
+			return fmt.Errorf("failed to create PSK temp file: %w", err)
+		}
+		defer os.Remove(pskFile.Name())
+		if _, err := pskFile.WriteString(presharedKey); err != nil {
+			pskFile.Close()
+			return fmt.Errorf("failed to write PSK: %w", err)
+		}
+		pskFile.Close()
+		args = append(args, "preshared-key", pskFile.Name())
 	}
 
 	if err := exec.Command("wg", args...).Run(); err != nil {

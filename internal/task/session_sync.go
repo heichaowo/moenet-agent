@@ -196,23 +196,40 @@ func (s *SessionSync) setupSession(ctx context.Context, session *BgpSession) err
 
 	// 1. Create WireGuard interface
 	if session.Type == "wireguard" && session.Credential != "" {
-		// Build allowed IPs from session addresses
-		allowedIPs := []string{}
-		if session.IPv4 != "" {
-			allowedIPs = append(allowedIPs, session.IPv4+"/32")
+		// Parse credential JSON to extract WireGuard parameters
+		var cred struct {
+			PublicKey    string `json:"public_key"`
+			PresharedKey string `json:"preshared_key"`
+			ListenPort   *int   `json:"listen_port"`
+			Endpoint     string `json:"endpoint"`
+			MTU          int    `json:"mtu"`
 		}
-		if session.IPv6 != "" {
-			allowedIPs = append(allowedIPs, session.IPv6+"/128")
+		peerKey := session.Credential // fallback: treat as raw key
+		if err := json.Unmarshal([]byte(session.Credential), &cred); err == nil && cred.PublicKey != "" {
+			peerKey = cred.PublicKey
 		}
-		if session.IPv6LinkLocal != "" {
-			allowedIPs = append(allowedIPs, session.IPv6LinkLocal+"/128")
+
+		// Determine listen port from credential
+		listenPort := 0
+		if cred.ListenPort != nil {
+			listenPort = *cred.ListenPort
+		}
+
+		// Standard DN42 allowed IPs (matching existing working sessions)
+		allowedIPs := []string{"0.0.0.0/0", "fd00::/8", "fe80::/64"}
+
+		// Use endpoint from credential if session endpoint is empty
+		endpoint := session.Endpoint
+		if endpoint == "" && cred.Endpoint != "" {
+			endpoint = cred.Endpoint
 		}
 
 		if err := s.wgExecutor.CreateInterface(
 			session.Interface,
-			0,                  // Listen port (0 = allocate automatically)
-			session.Credential, // Peer public key
-			session.Endpoint,
+			listenPort,        // Listen port from credential
+			peerKey,           // Peer public key extracted from credential
+			cred.PresharedKey, // Preshared key from credential
+			endpoint,
 			allowedIPs,
 			25, // Keepalive
 		); err != nil {
@@ -252,7 +269,7 @@ func (s *SessionSync) setupSession(ctx context.Context, session *BgpSession) err
 	}
 
 	// 4. Report success to CP
-	if err := s.reportStatus(ctx, session.UUID, "active", ""); err != nil {
+	if err := s.reportStatus(ctx, session.UUID, StatusEnabled, ""); err != nil {
 		return fmt.Errorf("failed to report status: %w", err)
 	}
 
@@ -292,7 +309,7 @@ func (s *SessionSync) deleteSession(ctx context.Context, session *BgpSession) er
 	}
 
 	// 4. Report deletion to CP
-	if err := s.reportStatus(ctx, session.UUID, "deleted", ""); err != nil {
+	if err := s.reportStatus(ctx, session.UUID, StatusDeleted, ""); err != nil {
 		return fmt.Errorf("failed to report status: %w", err)
 	}
 
@@ -337,15 +354,15 @@ func (s *SessionSync) cleanupDisabledSession(_ context.Context, session *BgpSess
 }
 
 // reportStatus reports session status change to Control Plane
-func (s *SessionSync) reportStatus(ctx context.Context, uuid, status, lastError string) error {
+func (s *SessionSync) reportStatus(ctx context.Context, sessionUUID string, status int, lastError string) error {
 	url := fmt.Sprintf("%s/api/v1/agent/%s/modify", s.config.ControlPlane.URL, s.config.Node.Name)
 
-	payload := map[string]string{
-		"peer_id": uuid,
-		"status":  status,
+	payload := map[string]interface{}{
+		"uuid":   sessionUUID,
+		"status": status,
 	}
 	if lastError != "" {
-		payload["last_error"] = lastError
+		payload["lastError"] = lastError
 	}
 
 	body, err := json.Marshal(payload)
