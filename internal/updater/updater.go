@@ -125,7 +125,15 @@ func (u *Updater) checkAndUpdate(ctx context.Context) {
 
 // CheckForUpdate checks if a new version is available
 func (u *Updater) CheckForUpdate(ctx context.Context) (*GitHubRelease, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", u.githubRepo)
+	var url string
+
+	// For dev/beta channels, we need to list all releases to find prereleases
+	// The /latest endpoint only returns non-prerelease versions
+	if u.config.Channel == "dev" || u.config.Channel == "beta" {
+		url = fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=10", u.githubRepo)
+	} else {
+		url = fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", u.githubRepo)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -148,14 +156,38 @@ func (u *Updater) CheckForUpdate(ctx context.Context) (*GitHubRelease, error) {
 		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
-	var release GitHubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
+	var release *GitHubRelease
 
-	// Filter prereleases if not on beta channel
-	if release.Prerelease && u.config.Channel != "beta" {
-		return nil, nil
+	if u.config.Channel == "dev" || u.config.Channel == "beta" {
+		// Parse as array of releases, find latest prerelease
+		var releases []GitHubRelease
+		if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+			return nil, fmt.Errorf("decode releases: %w", err)
+		}
+
+		for i := range releases {
+			if releases[i].Prerelease {
+				release = &releases[i]
+				break // First prerelease is the latest
+			}
+		}
+
+		if release == nil {
+			log.Printf("[Updater] No prerelease found for %s channel", u.config.Channel)
+			return nil, nil
+		}
+	} else {
+		// Parse as single release (stable channel)
+		var r GitHubRelease
+		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+			return nil, fmt.Errorf("decode response: %w", err)
+		}
+
+		// Skip prereleases for stable channel
+		if r.Prerelease {
+			return nil, nil
+		}
+		release = &r
 	}
 
 	// Compare versions using semver
@@ -167,14 +199,14 @@ func (u *Updater) CheckForUpdate(ctx context.Context) (*GitHubRelease, error) {
 		if u.currentVersion == "dev" || u.currentVersion == release.TagName {
 			return nil, nil
 		}
-		return &release, nil
+		return release, nil
 	}
 
 	if semver.Compare(releaseV, currentV) <= 0 {
 		return nil, nil // Current version is up-to-date or newer
 	}
 
-	return &release, nil
+	return release, nil
 }
 
 // DownloadAndApply downloads the new binary and applies the update

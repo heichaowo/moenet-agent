@@ -120,20 +120,51 @@ func (p *Pool) Close() {
 }
 
 // Execute runs a BIRD command and returns the response
+// It will retry once with a new connection if the first attempt fails (e.g., broken pipe)
 func (p *Pool) Execute(cmd string) (string, error) {
+	return p.executeWithRetry(cmd, 1)
+}
+
+// executeWithRetry attempts to execute a command with retry support
+func (p *Pool) executeWithRetry(cmd string, retries int) (string, error) {
 	conn, err := p.acquire()
 	if err != nil {
 		return "", fmt.Errorf("failed to acquire connection: %w", err)
 	}
-	defer p.release(conn)
 
 	// Send command
 	if _, err := fmt.Fprintf(conn.conn, "%s\n", cmd); err != nil {
+		// Connection broken, discard and retry
+		p.discard(conn)
+		if retries > 0 {
+			log.Printf("[BIRD] Connection error, retrying: %v", err)
+			return p.executeWithRetry(cmd, retries-1)
+		}
 		return "", fmt.Errorf("failed to send command: %w", err)
 	}
 
 	// Read response
-	return conn.readResponse()
+	result, err := conn.readResponse()
+	if err != nil {
+		// Connection broken, discard and retry
+		p.discard(conn)
+		if retries > 0 {
+			log.Printf("[BIRD] Read error, retrying: %v", err)
+			return p.executeWithRetry(cmd, retries-1)
+		}
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Success - return connection to pool
+	p.release(conn)
+	return result, nil
+}
+
+// discard closes a broken connection without returning it to the pool
+func (p *Pool) discard(conn *Conn) {
+	if conn != nil && conn.conn != nil {
+		conn.conn.Close()
+	}
 }
 
 // Configure triggers BIRD to reload configuration
