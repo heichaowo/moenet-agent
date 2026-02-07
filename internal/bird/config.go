@@ -34,7 +34,7 @@ type ConfigGenerator struct {
 
 // NewConfigGenerator creates a new BIRD config generator.
 func NewConfigGenerator(configDir string) (*ConfigGenerator, error) {
-	sessionDir := filepath.Join(configDir, "peers")
+	sessionDir := configDir // configDir is already the peers directory (e.g. /etc/bird/peers)
 
 	// Ensure session directory exists
 	if err := os.MkdirAll(sessionDir, 0755); err != nil {
