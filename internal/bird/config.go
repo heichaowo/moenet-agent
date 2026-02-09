@@ -59,10 +59,10 @@ func (g *ConfigGenerator) GenerateSession(cfg *SessionConfig) error {
 	cfg.IsMultiprotocol = containsExtension(cfg.Extensions, "mp-bgp")
 	cfg.IsExtNH = containsExtension(cfg.Extensions, "extended-nexthop")
 
-	// Determine neighbor address (prefer link-local for IPv6)
-	neighborAddr := cfg.IPv6LinkLocal
+	// Determine neighbor address (use remote IPv6, prefer link-local if available)
+	neighborAddr := cfg.IPv6
 	if neighborAddr == "" {
-		neighborAddr = cfg.IPv6
+		neighborAddr = cfg.IPv6LinkLocal
 	}
 
 	// Generate IPv6 session (standard for DN42)
