@@ -15,6 +15,7 @@ A Go-based daemon for automated BGP peering on [DN42](https://dn42.dev). Manages
 - [API Reference](#api-reference)
 - [BGP Communities](#bgp-communities)
 - [Development](#development)
+- [Deployment](#deployment)
 - [Documentation](#documentation)
 - [License](#license)
 
@@ -253,6 +254,53 @@ go test ./...
 ```bash
 golangci-lint run
 ```
+
+### Cross-Compile
+
+```bash
+# Build for Linux (from macOS or other host)
+GOOS=linux GOARCH=amd64 go build -o moenet-agent-linux ./cmd/moenet-agent
+```
+
+## Deployment
+
+### Update Agent on a Node
+
+> **Important**: The binary must be fully replaced while the agent is stopped. SCP while the process is running can result in a corrupted binary (MD5 mismatch).
+
+```bash
+NODE="hk1.dn42.moenet.work"
+KEY="~/.ssh/dn42_github_key"
+
+# 1. Stop agent and remove old binary
+ssh -i $KEY root@$NODE "systemctl stop moenet-agent && rm -f /opt/moenet-agent/moenet-agent"
+
+# 2. Upload new binary
+scp -i $KEY moenet-agent-linux root@$NODE:/opt/moenet-agent/moenet-agent
+
+# 3. Verify MD5, set permissions, and start
+ssh -i $KEY root@$NODE "chmod +x /opt/moenet-agent/moenet-agent && \
+  md5sum /opt/moenet-agent/moenet-agent && \
+  systemctl start moenet-agent"
+
+# 4. Verify against local hash
+md5 moenet-agent-linux
+```
+
+### Batch Update All Nodes
+
+```bash
+NODES=("hk1.dn42.moenet.work" "hk2.dn42.moenet.work" "jp1.dn42.moenet.work")
+
+for NODE in "${NODES[@]}"; do
+  echo "=== Deploying to $NODE ==="
+  ssh -i $KEY root@$NODE "systemctl stop moenet-agent && rm -f /opt/moenet-agent/moenet-agent"
+  scp -i $KEY moenet-agent-linux root@$NODE:/opt/moenet-agent/moenet-agent
+  ssh -i $KEY root@$NODE "chmod +x /opt/moenet-agent/moenet-agent && systemctl start moenet-agent"
+done
+```
+
+> **Note**: `hk2` uses SSH port `10022`. Add `-p 10022` to ssh/scp commands for that node.
 
 ## Documentation
 
