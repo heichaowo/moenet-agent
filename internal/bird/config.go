@@ -102,9 +102,12 @@ func (g *ConfigGenerator) RemoveSession(name string) error {
 }
 
 // containsExtension checks if an extension is in the list.
+// Normalizes hyphens/underscores for matching (e.g. "mp-bgp" matches "mp_bgp").
 func containsExtension(extensions []string, ext string) bool {
+	norm := strings.NewReplacer("-", "_")
+	extNorm := norm.Replace(strings.ToLower(ext))
 	for _, e := range extensions {
-		if strings.EqualFold(e, ext) {
+		if norm.Replace(strings.ToLower(e)) == extNorm {
 			return true
 		}
 	}
