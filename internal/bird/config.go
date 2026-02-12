@@ -55,9 +55,9 @@ func NewConfigGenerator(configDir string) (*ConfigGenerator, error) {
 
 // GenerateSession generates BIRD configuration for a session.
 func (g *ConfigGenerator) GenerateSession(cfg *SessionConfig) error {
-	// Check extensions
-	cfg.IsMultiprotocol = containsExtension(cfg.Extensions, "mp-bgp")
-	cfg.IsExtNH = containsExtension(cfg.Extensions, "extended-nexthop")
+	// Check extensions (canonical format: underscore, e.g. mp_bgp)
+	cfg.IsMultiprotocol = containsExtension(cfg.Extensions, "mp_bgp")
+	cfg.IsExtNH = containsExtension(cfg.Extensions, "extended_nexthop")
 
 	// Determine neighbor address (use remote IPv6, prefer link-local if available)
 	neighborAddr := cfg.IPv6
@@ -101,13 +101,10 @@ func (g *ConfigGenerator) RemoveSession(name string) error {
 	return nil
 }
 
-// containsExtension checks if an extension is in the list.
-// Normalizes hyphens/underscores for matching (e.g. "mp-bgp" matches "mp_bgp").
+// containsExtension checks if an extension is in the list (case-insensitive).
 func containsExtension(extensions []string, ext string) bool {
-	norm := strings.NewReplacer("-", "_")
-	extNorm := norm.Replace(strings.ToLower(ext))
 	for _, e := range extensions {
-		if norm.Replace(strings.ToLower(e)) == extNorm {
+		if strings.EqualFold(e, ext) {
 			return true
 		}
 	}
