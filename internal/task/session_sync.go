@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -255,6 +256,12 @@ func (s *SessionSync) setupSession(ctx context.Context, session *BgpSession) err
 	}
 
 	// 2. Generate BIRD configuration
+	// Derive source address from loopback (strip /64 prefix len for BIRD)
+	sourceAddr := deriveLLAFromLoopback(s.config.WireGuard.DN42IPv6)
+	if idx := strings.Index(sourceAddr, "/"); idx > 0 {
+		sourceAddr = sourceAddr[:idx]
+	}
+
 	cfg := &bird.SessionConfig{
 		Name:          fmt.Sprintf("dn42_%d", session.ASN),
 		Description:   session.Name,
@@ -263,6 +270,7 @@ func (s *SessionSync) setupSession(ctx context.Context, session *BgpSession) err
 		IPv4:          session.IPv4,
 		IPv6:          session.IPv6,
 		IPv6LinkLocal: session.IPv6LinkLocal,
+		SourceAddress: sourceAddr,
 		Extensions:    session.Extensions,
 		Policy:        session.Policy,
 	}
