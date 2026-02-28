@@ -1,6 +1,6 @@
 # MoeNet Agent
 
-[![Go Version](https://img.shields.io/badge/Go-1.25%2B-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.26%2B-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 A Go-based daemon for automated BGP peering on [DN42](https://dn42.dev). Manages WireGuard tunnels, BIRD routing configuration, and real-time metrics—all orchestrated by a central Control Plane.
