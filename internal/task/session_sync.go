@@ -264,7 +264,7 @@ func (s *SessionSync) setupSession(ctx context.Context, session *BgpSession) err
 
 	cfg := &bird.SessionConfig{
 		Name:          fmt.Sprintf("dn42_%d", session.ASN),
-		Description:   session.Name,
+		Description:   session.Description,
 		Interface:     session.Interface,
 		ASN:           session.ASN,
 		IPv4:          session.IPv4,
