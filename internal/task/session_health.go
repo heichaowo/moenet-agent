@@ -111,6 +111,9 @@ func listDN42Interfaces() []string {
 			interfaces = append(interfaces, name)
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		slog.Warn("error scanning /proc/net/dev", "error", err)
+	}
 	return interfaces
 }
 
