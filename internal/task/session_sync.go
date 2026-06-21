@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -30,6 +31,25 @@ type SessionSync struct {
 	// Local session state
 	mu       sync.RWMutex
 	sessions map[string]*BgpSession // key: UUID
+
+	// Callback invoked after each sync with the current session list
+	onSessionsUpdated func([]*BgpSession)
+
+	// orphanTracker tracks dn42_ interfaces with no matching session.
+	// Key: interface name, Value: number of consecutive sync cycles seen as orphan.
+	// An interface is only cleaned up after appearing as orphan for >= 2 cycles
+	// (grace period to avoid deleting interfaces being created concurrently).
+	orphanTracker map[string]int
+
+	// remediatedThisCycle tracks session UUIDs that have already been remediated
+	// in the current sync cycle. Limits each session to at most 1 fix attempt
+	// per cycle to prevent restart loops.
+	remediatedThisCycle map[string]bool
+
+	// remediationCount tracks total remediations executed in the current cycle.
+	// Capped at maxRemediationsPerCycle to avoid blocking the sync goroutine
+	// with stacked time.Sleep calls when multiple sessions are broken.
+	remediationCount int
 }
 
 // NewSessionSync creates a new session sync handler
@@ -39,12 +59,18 @@ func NewSessionSync(cfg *config.Config, birdPool *bird.Pool, birdConfig *bird.Co
 		httpClient: &http.Client{
 			Timeout: time.Duration(cfg.ControlPlane.RequestTimeout) * time.Second,
 		},
-		birdPool:   birdPool,
-		birdConfig: birdConfig,
-		wgExecutor: wgExecutor,
-		fwExecutor: fwExecutor,
-		sessions:   make(map[string]*BgpSession),
+		birdPool:        birdPool,
+		birdConfig:      birdConfig,
+		wgExecutor:      wgExecutor,
+		fwExecutor:      fwExecutor,
+		sessions:        make(map[string]*BgpSession),
+		orphanTracker:   make(map[string]int),
 	}
+}
+
+// SetOnSessionsUpdated registers a callback that fires after each sync cycle.
+func (s *SessionSync) SetOnSessionsUpdated(fn func([]*BgpSession)) {
+	s.onSessionsUpdated = fn
 }
 
 // Run starts the session sync task
@@ -74,6 +100,10 @@ func (s *SessionSync) Run(ctx context.Context, wg *sync.WaitGroup) {
 
 // Sync fetches sessions from CP and applies changes
 func (s *SessionSync) Sync(ctx context.Context) error {
+	// Reset per-cycle remediation tracker
+	s.remediatedThisCycle = make(map[string]bool)
+	s.remediationCount = 0
+
 	// Fetch sessions from Control Plane
 	sessions, err := s.fetchSessions(ctx)
 	if err != nil {
@@ -96,16 +126,43 @@ func (s *SessionSync) Sync(ctx context.Context) error {
 		}
 	}
 
-	// Find deleted sessions (in local but not in remote)
+	// Find and clean up deleted sessions (in local but not in remote)
+	needBirdReload := false
 	s.mu.RLock()
 	for uuid, localSession := range s.sessions {
 		if _, exists := remoteMap[uuid]; !exists {
-			log.Printf("[SessionSync] Session %s (AS%d) removed from CP, cleaning up",
-				uuid, localSession.ASN)
-			// TODO: Remove WireGuard interface and BIRD config
+			slog.Info("session removed from CP, cleaning up",
+				"uuid", uuid, "asn", localSession.ASN)
+
+			// Remove BIRD config
+			peerName := fmt.Sprintf("dn42_%d", localSession.ASN)
+			if err := s.birdConfig.RemoveSession(peerName); err != nil {
+				slog.Warn("failed to remove BIRD config for orphan",
+					"peer", peerName, "error", err)
+			} else {
+				needBirdReload = true
+			}
+
+			// Remove WireGuard interface
+			if localSession.Interface != "" {
+				if err := s.wgExecutor.DeleteInterface(localSession.Interface); err != nil {
+					slog.Warn("failed to delete WG interface for orphan",
+						"interface", localSession.Interface, "error", err)
+				}
+			}
 		}
 	}
 	s.mu.RUnlock()
+
+	// Reload BIRD once if any orphan configs were removed
+	if needBirdReload {
+		if err := s.birdPool.Configure(); err != nil {
+			slog.Warn("BIRD reconfigure failed after orphan cleanup", "error", err)
+		}
+	}
+
+	// Scan for stale dn42_ interfaces with no matching session (grace period: 2 cycles)
+	s.scanOrphanInterfaces(remoteMap)
 
 	// Update local session map
 	s.mu.Lock()
@@ -125,6 +182,12 @@ func (s *SessionSync) Sync(ctx context.Context) error {
 		} else if added > 0 || removed > 0 {
 			log.Printf("[SessionSync] Firewall synced: %d added, %d removed", added, removed)
 		}
+	}
+
+	// Notify probe (or other subscribers) of updated session list
+	if s.onSessionsUpdated != nil {
+		allSessions := s.GetAllSessions()
+		s.onSessionsUpdated(allSessions)
 	}
 
 	return nil
@@ -293,12 +356,53 @@ func (s *SessionSync) setupSession(ctx context.Context, session *BgpSession) err
 	return nil
 }
 
-// verifySession checks if an existing session is working
-//
-//nolint:unparam // ctx and session reserved for future implementation
-func (s *SessionSync) verifySession(_ context.Context, _ *BgpSession) error {
-	// TODO: Check WireGuard handshake
-	// TODO: Check BIRD protocol state
+// verifySession checks if an existing session is healthy by inspecting
+// BIRD protocol state and WireGuard handshake recency.
+// If either check indicates a problem, it delegates to handleProblemSession.
+// Errors are logged but never returned — a single unhealthy session must not
+// block the rest of the sync cycle.
+func (s *SessionSync) verifySession(ctx context.Context, session *BgpSession) error {
+	protocolName := fmt.Sprintf("dn42_%d", session.ASN)
+	var problems []string
+
+	// --- BIRD protocol state check ---
+	birdResult, err := s.birdPool.Execute("show protocols all \"" + protocolName + "\"")
+	if err != nil {
+		// BIRD socket may be unavailable (restart, etc.) — skip, don't cascade
+		slog.Warn("BIRD query failed during health check, skipping",
+			"peer", protocolName, "error", err)
+	} else {
+		state, found := parseBIRDProtocolState(birdResult)
+		if found && state != "Established" {
+			problems = append(problems, fmt.Sprintf("BGP state is %s", state))
+		}
+	}
+
+	// --- WireGuard handshake check ---
+	if session.Interface != "" {
+		wgResult, err := s.wgExecutor.GetStatus(session.Interface)
+		if err != nil {
+			// Interface may not exist (manual removal) — skip
+			slog.Warn("WG status query failed during health check, skipping",
+				"interface", session.Interface, "error", err)
+		} else {
+			age, hasHandshake := parseHandshakeAge(wgResult)
+			if !hasHandshake {
+				problems = append(problems, "WG has no handshake (never connected)")
+			} else if age > 5*time.Minute {
+				problems = append(problems, fmt.Sprintf("WG last handshake %s ago", age))
+			}
+		}
+	}
+
+	// If any problems detected, attempt remediation
+	if len(problems) > 0 {
+		slog.Info("session health check failed",
+			"asn", session.ASN, "problems", strings.Join(problems, "; "))
+		session.LastError = strings.Join(problems, "; ")
+		return s.handleProblemSession(ctx, session)
+	}
+
 	return nil
 }
 
@@ -333,13 +437,148 @@ func (s *SessionSync) deleteSession(ctx context.Context, session *BgpSession) er
 	return nil
 }
 
-// handleProblemSession attempts to fix a problematic session
-//
-//nolint:unparam // ctx reserved for future implementation
-func (s *SessionSync) handleProblemSession(_ context.Context, session *BgpSession) error {
-	log.Printf("[SessionSync] Handling problem session AS%d", session.ASN)
-	// TODO: Attempt to reconfigure
+// handleProblemSession attempts to fix a problematic session by restarting
+// the BIRD protocol and/or bouncing the WireGuard interface.
+// Each session is limited to 1 remediation attempt per sync cycle to prevent
+// restart loops. If remediation fails, the session is reported as StatusProblem
+// to the Control Plane.
+func (s *SessionSync) handleProblemSession(ctx context.Context, session *BgpSession) error {
+	// Rate limit: max 1 remediation per session per sync cycle
+	if s.remediatedThisCycle[session.UUID] {
+		slog.Debug("skipping remediation, already attempted this cycle",
+			"asn", session.ASN, "uuid", session.UUID)
+		return nil
+	}
+
+	// Cap total remediations per cycle to avoid blocking the sync goroutine
+	// with stacked time.Sleep calls (each remediation sleeps 5s for recovery).
+	const maxRemediationsPerCycle = 1
+	if s.remediationCount >= maxRemediationsPerCycle {
+		slog.Info("skipping remediation, cycle budget exhausted (will retry next cycle)",
+			"asn", session.ASN, "uuid", session.UUID,
+			"budget", maxRemediationsPerCycle)
+		return nil
+	}
+	s.remediatedThisCycle[session.UUID] = true
+	s.remediationCount++
+
+	protocolName := fmt.Sprintf("dn42_%d", session.ASN)
+	slog.Info("attempting auto-remediation", "asn", session.ASN, "protocol", protocolName)
+
+	// --- Attempt BGP restart ---
+	_, err := s.birdPool.Execute("restart \"" + protocolName + "\"")
+	if err != nil {
+		slog.Warn("BIRD restart failed", "protocol", protocolName, "error", err)
+	}
+
+	// --- Attempt WG interface bounce ---
+	if session.Interface != "" {
+		if err := bounceInterface(session.Interface); err != nil {
+			slog.Warn("WG interface bounce failed", "interface", session.Interface, "error", err)
+		}
+	}
+
+	// Wait briefly for services to recover
+	time.Sleep(5 * time.Second)
+
+	// --- Re-check health after remediation ---
+	stillBroken := false
+	var lastError string
+
+	birdResult, err := s.birdPool.Execute("show protocols all \"" + protocolName + "\"")
+	if err != nil {
+		slog.Warn("BIRD re-check failed after remediation", "protocol", protocolName, "error", err)
+		stillBroken = true
+		lastError = "BIRD unreachable after restart"
+	} else {
+		state, found := parseBIRDProtocolState(birdResult)
+		if found && state != "Established" {
+			stillBroken = true
+			lastError = fmt.Sprintf("BGP stuck in %s after restart", state)
+		}
+	}
+
+	if session.Interface != "" {
+		wgResult, err := s.wgExecutor.GetStatus(session.Interface)
+		if err != nil {
+			slog.Warn("WG re-check failed after remediation", "interface", session.Interface, "error", err)
+			if !stillBroken {
+				stillBroken = true
+				lastError = "WG interface unavailable after bounce"
+			}
+		} else {
+			age, hasHandshake := parseHandshakeAge(wgResult)
+			if !hasHandshake || age > 5*time.Minute {
+				if !stillBroken {
+					stillBroken = true
+					lastError = "WG no handshake after interface bounce"
+				}
+			}
+		}
+	}
+
+	// Report to CP if still unhealthy
+	if stillBroken {
+		slog.Warn("remediation failed, reporting problem to CP",
+			"asn", session.ASN, "lastError", lastError)
+		if err := s.reportStatus(ctx, session.UUID, StatusProblem, lastError); err != nil {
+			slog.Error("failed to report problem status to CP",
+				"uuid", session.UUID, "error", err)
+		}
+	} else {
+		slog.Info("remediation successful", "asn", session.ASN)
+	}
+
 	return nil
+}
+
+// scanOrphanInterfaces detects dn42_ WireGuard interfaces that have no
+// matching session in the remote map. Interfaces are tracked across cycles
+// and only cleaned up after appearing as orphans for >= 2 consecutive sync
+// cycles (grace period to avoid deleting interfaces being created concurrently).
+func (s *SessionSync) scanOrphanInterfaces(remoteMap map[string]*BgpSession) {
+	systemIfaces := listDN42Interfaces()
+	if len(systemIfaces) == 0 {
+		return
+	}
+
+	// Build set of known interfaces from remote sessions
+	knownIfaces := make(map[string]bool, len(remoteMap))
+	for _, session := range remoteMap {
+		if session.Interface != "" {
+			knownIfaces[session.Interface] = true
+		}
+	}
+
+	// Track new orphans and age existing ones
+	currentOrphans := make(map[string]bool)
+	for _, iface := range systemIfaces {
+		if knownIfaces[iface] {
+			continue
+		}
+		currentOrphans[iface] = true
+		s.orphanTracker[iface]++
+
+		if s.orphanTracker[iface] >= 2 {
+			slog.Warn("cleaning up orphaned interface (grace period expired)",
+				"interface", iface, "cycles_seen", s.orphanTracker[iface])
+			if err := s.wgExecutor.DeleteInterface(iface); err != nil {
+				slog.Warn("failed to delete orphaned interface",
+					"interface", iface, "error", err)
+			}
+			delete(s.orphanTracker, iface)
+		} else {
+			slog.Info("orphaned interface detected, tracking",
+				"interface", iface, "cycles_seen", s.orphanTracker[iface])
+		}
+	}
+
+	// Clean stale entries from tracker (interfaces that disappeared)
+	for iface := range s.orphanTracker {
+		if !currentOrphans[iface] {
+			delete(s.orphanTracker, iface)
+		}
+	}
 }
 
 // cleanupDisabledSession removes config for a disabled session

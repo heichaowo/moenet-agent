@@ -341,12 +341,14 @@ define DN42_LATENCY_6    = (64511, 7);  # RTT < 1097ms
 define DN42_LATENCY_7    = (64511, 8);  # RTT < 2981ms
 define DN42_LATENCY_8    = (64511, 9);  # RTT >= 2981ms
 
-# Bandwidth Communities (64511, 21-25)
-define DN42_BW_100M_PLUS = (64511, 21);
-define DN42_BW_10G_PLUS  = (64511, 22);
-define DN42_BW_1G_PLUS   = (64511, 23);
-define DN42_BW_100K_PLUS = (64511, 24);
-define DN42_BW_10M_PLUS  = (64511, 25);
+# Bandwidth Communities (64511, 21-26)
+# Formula: bw >= 10^(x-2) mbit (ascending order per DN42 standard)
+define DN42_BW_100K_PLUS = (64511, 21);  # >= 0.1 Mbit
+define DN42_BW_1M_PLUS   = (64511, 22);  # >= 1 Mbit
+define DN42_BW_10M_PLUS  = (64511, 23);  # >= 10 Mbit
+define DN42_BW_100M_PLUS = (64511, 24);  # >= 100 Mbit
+define DN42_BW_1G_PLUS   = (64511, 25);  # >= 1 Gbps
+define DN42_BW_10G_PLUS  = (64511, 26);  # >= 10 Gbps (MoeNet ext)
 
 # Crypto Communities (64511, 31-34)
 define DN42_CRYPTO_NONE      = (64511, 31);
@@ -354,20 +356,24 @@ define DN42_CRYPTO_UNSAFE    = (64511, 32);
 define DN42_CRYPTO_ENCRYPTED = (64511, 33);
 define DN42_CRYPTO_LATENCY   = (64511, 34);
 
-# Region Communities (64511, 41-53)
+# Region Communities (64511, 41-57) — May 2022 revision
 define DN42_REGION_EU       = (64511, 41);
 define DN42_REGION_NA_E     = (64511, 42);
 define DN42_REGION_NA_C     = (64511, 43);
 define DN42_REGION_NA_W     = (64511, 44);
 define DN42_REGION_CA       = (64511, 45);
-define DN42_REGION_SA       = (64511, 46);
-define DN42_REGION_AF       = (64511, 47);
-define DN42_REGION_AS_S     = (64511, 48);
-define DN42_REGION_AS_SE    = (64511, 49);
-define DN42_REGION_AS_E     = (64511, 50);
-define DN42_REGION_OC       = (64511, 51);
-define DN42_REGION_ME       = (64511, 52);
-define DN42_REGION_AS_N     = (64511, 53);
+define DN42_REGION_SA_E     = (64511, 46);
+define DN42_REGION_SA_W     = (64511, 47);
+define DN42_REGION_AF_N     = (64511, 48);
+define DN42_REGION_AF_S     = (64511, 49);
+define DN42_REGION_AS_S     = (64511, 50);
+define DN42_REGION_AS_SE    = (64511, 51);
+define DN42_REGION_AS_E     = (64511, 52);
+define DN42_REGION_OC       = (64511, 53);
+define DN42_REGION_ANT      = (64511, 54);
+define DN42_REGION_AS_N     = (64511, 55);
+define DN42_REGION_AS_W     = (64511, 56);
+define DN42_REGION_AS_CA    = (64511, 57);
 
 # Action Communities
 define DN42_NO_EXPORT   = (64511, 65281);
@@ -541,18 +547,21 @@ define LC_ORIGIN_OTHER = (MOENET_ASN, 1, 500);  # Other (AF, ME, SA, CA)
 # Codes: 1xx=Asia, 2xx=NA, 3xx=EU, 4xx=OC, 5xx=Other
 # -----------------------------------------------------------------------------
 
-# Asia (matching DN42 standard)
+# Asia (matching DN42 2022 standard)
 define LC_REGION_AS_E  = (MOENET_ASN, 2, 101);  # East Asia: HK, JP, KR, TW
-define LC_REGION_AS_SE = (MOENET_ASN, 2, 102);  # Southeast: SG, MY
-define LC_REGION_AS_S  = (MOENET_ASN, 2, 103);  # South: IN
+define LC_REGION_AS_SE = (MOENET_ASN, 2, 102);  # Southeast: SG, MY, TH, PH, ID
+define LC_REGION_AS_S  = (MOENET_ASN, 2, 103);  # South: IN, PK, BD
 define LC_REGION_AS_N  = (MOENET_ASN, 2, 104);  # North: RU/Siberia
+define LC_REGION_AS_W  = (MOENET_ASN, 2, 105);  # West: IR, TR, UAE
+define LC_REGION_AS_CA = (MOENET_ASN, 2, 106);  # Central Asia: AF, UZ, KZ
 
 # North America (matching DN42 standard)
-define LC_REGION_NA_E = (MOENET_ASN, 2, 201);  # East coast
-define LC_REGION_NA_C = (MOENET_ASN, 2, 202);  # Central
-define LC_REGION_NA_W = (MOENET_ASN, 2, 203);  # West coast
-define LC_REGION_CA   = (MOENET_ASN, 2, 204);  # Central America
-define LC_REGION_SA   = (MOENET_ASN, 2, 205);  # South America
+define LC_REGION_NA_E  = (MOENET_ASN, 2, 201);  # East coast
+define LC_REGION_NA_C  = (MOENET_ASN, 2, 202);  # Central
+define LC_REGION_NA_W  = (MOENET_ASN, 2, 203);  # West coast
+define LC_REGION_CA    = (MOENET_ASN, 2, 204);  # Central America
+define LC_REGION_SA_E  = (MOENET_ASN, 2, 205);  # South America - East
+define LC_REGION_SA_W  = (MOENET_ASN, 2, 206);  # South America - West
 
 # Europe (MoeNet extension, DN42 only has eu)
 define LC_REGION_EU_W = (MOENET_ASN, 2, 301);  # Western: GB, FR
@@ -563,8 +572,9 @@ define LC_REGION_EU_E = (MOENET_ASN, 2, 303);  # Eastern: PL, RU-West
 define LC_REGION_OC = (MOENET_ASN, 2, 401);    # AU, NZ
 
 # Other regions
-define LC_REGION_AF = (MOENET_ASN, 2, 501);    # Africa
-define LC_REGION_ME = (MOENET_ASN, 2, 502);    # Middle East
+define LC_REGION_AF_N = (MOENET_ASN, 2, 501);  # Africa - North
+define LC_REGION_AF_S = (MOENET_ASN, 2, 502);  # Africa - South
+define LC_REGION_ME   = (MOENET_ASN, 2, 503);  # Middle East
 
 # -----------------------------------------------------------------------------
 # Type 4: Link Characteristics
@@ -600,16 +610,20 @@ function get_continent_from_region(pair region) -> lc {
     if region = LC_REGION_AS_SE then return LC_ORIGIN_AS;
     if region = LC_REGION_AS_S  then return LC_ORIGIN_AS;
     if region = LC_REGION_AS_N  then return LC_ORIGIN_AS;
+    if region = LC_REGION_AS_W  then return LC_ORIGIN_AS;
+    if region = LC_REGION_AS_CA then return LC_ORIGIN_AS;
     if region = LC_REGION_NA_E  then return LC_ORIGIN_NA;
     if region = LC_REGION_NA_C  then return LC_ORIGIN_NA;
     if region = LC_REGION_NA_W  then return LC_ORIGIN_NA;
     if region = LC_REGION_CA    then return LC_ORIGIN_NA;
-    if region = LC_REGION_SA    then return LC_ORIGIN_OTHER;
+    if region = LC_REGION_SA_E  then return LC_ORIGIN_OTHER;
+    if region = LC_REGION_SA_W  then return LC_ORIGIN_OTHER;
     if region = LC_REGION_EU_W  then return LC_ORIGIN_EU;
     if region = LC_REGION_EU_C  then return LC_ORIGIN_EU;
     if region = LC_REGION_EU_E  then return LC_ORIGIN_EU;
     if region = LC_REGION_OC    then return LC_ORIGIN_OC;
-    if region = LC_REGION_AF    then return LC_ORIGIN_OTHER;
+    if region = LC_REGION_AF_N  then return LC_ORIGIN_OTHER;
+    if region = LC_REGION_AF_S  then return LC_ORIGIN_OTHER;
     if region = LC_REGION_ME    then return LC_ORIGIN_OTHER;
     return (0, 0, 0);
 }
@@ -739,11 +753,23 @@ function apply_cold_potato() {
     # Extract subregion
     if (LC_REGION_AS_E ~ bgp_large_community) then origin_subregion = LC_REGION_AS_E;
     else if (LC_REGION_AS_SE ~ bgp_large_community) then origin_subregion = LC_REGION_AS_SE;
+    else if (LC_REGION_AS_S ~ bgp_large_community) then origin_subregion = LC_REGION_AS_S;
+    else if (LC_REGION_AS_N ~ bgp_large_community) then origin_subregion = LC_REGION_AS_N;
+    else if (LC_REGION_AS_W ~ bgp_large_community) then origin_subregion = LC_REGION_AS_W;
+    else if (LC_REGION_AS_CA ~ bgp_large_community) then origin_subregion = LC_REGION_AS_CA;
+    else if (LC_REGION_NA_E ~ bgp_large_community) then origin_subregion = LC_REGION_NA_E;
+    else if (LC_REGION_NA_C ~ bgp_large_community) then origin_subregion = LC_REGION_NA_C;
+    else if (LC_REGION_NA_W ~ bgp_large_community) then origin_subregion = LC_REGION_NA_W;
+    else if (LC_REGION_CA ~ bgp_large_community) then origin_subregion = LC_REGION_CA;
+    else if (LC_REGION_SA_E ~ bgp_large_community) then origin_subregion = LC_REGION_SA_E;
+    else if (LC_REGION_SA_W ~ bgp_large_community) then origin_subregion = LC_REGION_SA_W;
     else if (LC_REGION_EU_W ~ bgp_large_community) then origin_subregion = LC_REGION_EU_W;
     else if (LC_REGION_EU_C ~ bgp_large_community) then origin_subregion = LC_REGION_EU_C;
-    else if (LC_REGION_NA_E ~ bgp_large_community) then origin_subregion = LC_REGION_NA_E;
-    else if (LC_REGION_NA_W ~ bgp_large_community) then origin_subregion = LC_REGION_NA_W;
+    else if (LC_REGION_EU_E ~ bgp_large_community) then origin_subregion = LC_REGION_EU_E;
     else if (LC_REGION_OC ~ bgp_large_community) then origin_subregion = LC_REGION_OC;
+    else if (LC_REGION_AF_N ~ bgp_large_community) then origin_subregion = LC_REGION_AF_N;
+    else if (LC_REGION_AF_S ~ bgp_large_community) then origin_subregion = LC_REGION_AF_S;
+    else if (LC_REGION_ME ~ bgp_large_community) then origin_subregion = LC_REGION_ME;
     
     # Apply cold potato preference
     if (origin_subregion = OUR_SUBREGION) then {

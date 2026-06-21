@@ -15,11 +15,14 @@ import (
 
 	"github.com/moenet/moenet-agent/internal/api"
 	"github.com/moenet/moenet-agent/internal/bird"
+	"github.com/moenet/moenet-agent/internal/blacklist"
+	"github.com/moenet/moenet-agent/internal/community"
 	"github.com/moenet/moenet-agent/internal/config"
 	"github.com/moenet/moenet-agent/internal/firewall"
 	"github.com/moenet/moenet-agent/internal/httpclient"
 	"github.com/moenet/moenet-agent/internal/loopback"
 	"github.com/moenet/moenet-agent/internal/maintenance"
+	"github.com/moenet/moenet-agent/internal/probe"
 	"github.com/moenet/moenet-agent/internal/task"
 	"github.com/moenet/moenet-agent/internal/updater"
 	"github.com/moenet/moenet-agent/internal/wireguard"
@@ -111,10 +114,25 @@ func main() {
 	// Create tools handler for network diagnostics
 	toolsHandler := api.NewToolsHandler(birdPool, cfg.ControlPlane.Token)
 
+	// Create probe instances
+	latencyProbe := probe.NewLatencyProbe()
+	mtuProbe := probe.NewMTUProbe()
+	probeHandler := api.NewProbeHandler(latencyProbe, mtuProbe, cfg.ControlPlane.Token)
+
+	// Create community manager and handler
+	communityMgr := community.NewManager(birdPool, "/etc/bird/filters.d")
+	communityHandler := api.NewCommunityHandler(communityMgr, cfg.ControlPlane.Token)
+
+	// Create peer status handler
+	peerHandler := api.NewPeerHandler(birdPool, wgExecutor, cfg.ControlPlane.Token)
+
+	// Create blacklist manager and handler
+	blacklistMgr := blacklist.NewManager("/etc/bird/blacklist.conf", birdPool)
+	blacklistHandler := api.NewBlacklistHandler(blacklistMgr, cfg.ControlPlane.Token)
+
 	// Set up HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", apiHandler.HandleStatus)
-	mux.HandleFunc("/sync", handleSync)
 	mux.HandleFunc("/metrics", apiHandler.HandleMetrics)
 	mux.HandleFunc("/maintenance", apiHandler.HandleMaintenance)
 	mux.HandleFunc("/maintenance/start", apiHandler.HandleMaintenanceStart)
@@ -127,6 +145,33 @@ func main() {
 	mux.HandleFunc("/trace", toolsHandler.HandleTrace)
 	mux.HandleFunc("/route", toolsHandler.HandleRoute)
 	mux.HandleFunc("/path", toolsHandler.HandlePath)
+
+	// Probe management
+	mux.HandleFunc("/probe", probeHandler.HandleGetStats)
+	mux.HandleFunc("/probe/add", probeHandler.HandleAddPeer)
+	mux.HandleFunc("/probe/remove", probeHandler.HandleRemovePeer)
+	mux.HandleFunc("/probe/now", probeHandler.HandleProbeNow)
+	mux.HandleFunc("/probe/stats", probeHandler.HandlePeerStats)
+	mux.HandleFunc("/probe/start", probeHandler.HandleStart)
+	mux.HandleFunc("/probe/stop", probeHandler.HandleStop)
+	mux.HandleFunc("/probe/mtu", probeHandler.HandleMTUProbe)
+
+	// Community management
+	mux.HandleFunc("/community", communityHandler.HandleGetStats)
+	mux.HandleFunc("/community/route", communityHandler.HandleRouteQuery)
+	mux.HandleFunc("/community/peer", communityHandler.HandleGetPeerCommunities)
+	mux.HandleFunc("/community/peer/set", communityHandler.HandleSetPeerCommunities)
+	mux.HandleFunc("/community/filters", communityHandler.HandleListFilters)
+	mux.HandleFunc("/community/filters/add", communityHandler.HandleAddFilter)
+	mux.HandleFunc("/community/filters/remove", communityHandler.HandleRemoveFilter)
+
+	// Per-peer live status
+	mux.HandleFunc("/peer/", peerHandler.HandleGetPeerStatus)
+
+	// Blacklist management
+	mux.HandleFunc("/blacklist", blacklistHandler.HandleGetBlacklist)
+	mux.HandleFunc("/blacklist/add", blacklistHandler.HandleAddBlacklist)
+	mux.HandleFunc("/blacklist/remove", blacklistHandler.HandleRemoveBlacklist)
 
 	server := &http.Server{
 		Addr:         cfg.Server.Listen,
@@ -164,9 +209,20 @@ func main() {
 	// Connect MeshSync to RTT so RTT can use mesh peer loopback IPs
 	meshSync.SetOnPeersUpdated(rttMeasurement.UpdateMeshPeers)
 
+	// Connect SessionSync to LatencyProbe for auto-populating peer list
+	sessionSync.SetOnSessionsUpdated(func(sessions []*task.BgpSession) {
+		infos := make([]probe.SessionInfo, 0, len(sessions))
+		for _, s := range sessions {
+			if s.Status == task.StatusEnabled && s.Endpoint != "" {
+				infos = append(infos, probe.SessionInfo{ASN: s.ASN, Endpoint: s.Endpoint})
+			}
+		}
+		latencyProbe.UpdatePeersFromSessions(infos)
+	})
+
 	// Create WaitGroup for background tasks
 	var wg sync.WaitGroup
-	taskCount := 7 // heartbeat, sessionSync, metricCollector, rttMeasurement, meshSync, ibgpSync, birdConfigSync
+	taskCount := 8 // heartbeat, sessionSync, metricCollector, rttMeasurement, meshSync, ibgpSync, birdConfigSync, latencyProbe
 
 	// Initialize auto-updater if enabled
 	var agentUpdater *updater.Updater
@@ -193,6 +249,7 @@ func main() {
 	go meshSync.Run(ctx, &wg)
 	go ibgpSync.Run(ctx, &wg)
 	go birdConfigSync.Run(ctx, &wg)
+	go latencyProbe.Run(ctx, &wg)
 	if agentUpdater != nil {
 		go agentUpdater.Run(ctx, &wg)
 	}
@@ -244,10 +301,4 @@ func main() {
 	}
 
 	log.Printf("%s stopped\n", serverSignature)
-}
-
-// handleSync handles sync requests (placeholder)
-func handleSync(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprint(w, `{"status":"sync_triggered"}`)
 }
