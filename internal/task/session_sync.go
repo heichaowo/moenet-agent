@@ -358,14 +358,36 @@ func (s *SessionSync) setupSession(ctx context.Context, session *BgpSession) err
 
 // verifySession checks if an existing session is healthy by inspecting
 // BIRD protocol state and WireGuard handshake recency.
+// If the WireGuard interface is missing entirely (e.g., after server reboot),
+// it attempts auto-recovery by re-running the full setup flow.
 // If either check indicates a problem, it delegates to handleProblemSession.
 // Errors are logged but never returned — a single unhealthy session must not
 // block the rest of the sync cycle.
 func (s *SessionSync) verifySession(ctx context.Context, session *BgpSession) error {
 	protocolName := fmt.Sprintf("dn42_%d", session.ASN)
-	var problems []string
+
+	// --- WG interface existence check (auto-recovery) ---
+	// If the interface doesn't exist at all (server reboot, manual deletion),
+	// re-run full setup instead of trying to bounce a non-existent interface.
+	if session.Type == "wireguard" && session.Interface != "" {
+		if !s.wgExecutor.InterfaceExists(session.Interface) {
+			slog.Warn("WG interface missing, attempting auto-recovery",
+				"interface", session.Interface, "asn", session.ASN)
+			if err := s.setupSession(ctx, session); err != nil {
+				slog.Error("auto-recovery failed, reporting problem",
+					"asn", session.ASN, "error", err)
+				session.LastError = fmt.Sprintf("auto-recovery failed: %v", err)
+				_ = s.reportStatus(ctx, session.UUID, StatusProblem, session.LastError)
+				return nil
+			}
+			slog.Info("auto-recovery successful, interface recreated",
+				"interface", session.Interface, "asn", session.ASN)
+			return nil
+		}
+	}
 
 	// --- BIRD protocol state check ---
+	var problems []string
 	birdResult, err := s.birdPool.Execute("show protocols all \"" + protocolName + "\"")
 	if err != nil {
 		// BIRD socket may be unavailable (restart, etc.) — skip, don't cascade

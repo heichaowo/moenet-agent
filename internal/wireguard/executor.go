@@ -74,7 +74,7 @@ func (e *Executor) PublicKey() string {
 // CreateInterface creates a WireGuard interface
 func (e *Executor) CreateInterface(name string, listenPort int, peerKey, presharedKey, endpoint string, allowedIPs []string, keepalive int) error {
 	// Create interface if it doesn't exist
-	if !e.interfaceExists(name) {
+	if !e.InterfaceExists(name) {
 		if err := exec.Command("ip", "link", "add", "dev", name, "type", "wireguard").Run(); err != nil {
 			return fmt.Errorf("failed to create interface: %w", err)
 		}
@@ -154,7 +154,7 @@ func (e *Executor) SetMTU(ifname string, mtu int) error {
 
 // DeleteInterface removes a WireGuard interface
 func (e *Executor) DeleteInterface(name string) error {
-	if !e.interfaceExists(name) {
+	if !e.InterfaceExists(name) {
 		return nil
 	}
 
@@ -170,8 +170,8 @@ func (e *Executor) DeleteInterface(name string) error {
 	return nil
 }
 
-// interfaceExists checks if a network interface exists
-func (e *Executor) interfaceExists(name string) bool {
+// InterfaceExists checks if a network interface exists.
+func (e *Executor) InterfaceExists(name string) bool {
 	file, err := os.Open("/proc/net/dev")
 	if err != nil {
 		return false
