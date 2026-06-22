@@ -367,12 +367,35 @@ func (s *SessionSync) verifySession(ctx context.Context, session *BgpSession) er
 	protocolName := fmt.Sprintf("dn42_%d", session.ASN)
 
 	// --- WG interface existence check (auto-recovery) ---
-	// If the interface doesn't exist at all (server reboot, manual deletion),
-	// re-run full setup instead of trying to bounce a non-existent interface.
+	// Trigger recovery if the interface doesn't exist, or exists but is not
+	// functional (e.g., stuck in DOWN state from a previous failed migration).
 	if session.Type == "wireguard" && session.Interface != "" {
+		needsRecovery := false
 		if !s.wgExecutor.InterfaceExists(session.Interface) {
-			slog.Warn("WG interface missing, attempting auto-recovery",
+			needsRecovery = true
+		} else if _, err := s.wgExecutor.GetStatus(session.Interface); err != nil {
+			// Interface exists in /proc/net/dev but wg show fails → broken
+			needsRecovery = true
+		}
+
+		if needsRecovery {
+			slog.Warn("WG interface missing or broken, attempting auto-recovery",
 				"interface", session.Interface, "asn", session.ASN)
+
+			// Clean up old-named interface if it exists (migration: dn42- → dn42_).
+			// The old interface may still hold the WG listen port, blocking the new one.
+			oldName := strings.Replace(session.Interface, "dn42_", "dn42-", 1)
+			if oldName != session.Interface && s.wgExecutor.InterfaceExists(oldName) {
+				slog.Info("removing old-named interface before recovery",
+					"old", oldName, "new", session.Interface)
+				_ = s.wgExecutor.DeleteInterface(oldName)
+			}
+
+			// Delete the broken new-named interface so setupSession recreates it cleanly
+			if s.wgExecutor.InterfaceExists(session.Interface) {
+				_ = s.wgExecutor.DeleteInterface(session.Interface)
+			}
+
 			if err := s.setupSession(ctx, session); err != nil {
 				slog.Error("auto-recovery failed, reporting problem",
 					"asn", session.ASN, "error", err)
