@@ -344,9 +344,15 @@ func (s *SessionSync) setupSession(ctx context.Context, session *BgpSession) err
 		return fmt.Errorf("failed to generate BIRD config: %w", err)
 	}
 
-	// 3. Reload BIRD
+	// 3. Reload BIRD and restart this specific protocol.
+	// Configure alone may not restart protocols whose config didn't change,
+	// leaving stale interface scope bindings (e.g., fe80::xxx%dn42-old).
 	if err := s.birdPool.Configure(); err != nil {
 		log.Printf("[SessionSync] Warning: BIRD reconfigure failed: %v", err)
+	}
+	protocolName := fmt.Sprintf("dn42_%d", session.ASN)
+	if _, err := s.birdPool.Execute("restart \"" + protocolName + "\""); err != nil {
+		log.Printf("[SessionSync] Warning: BIRD protocol restart failed: %v", err)
 	}
 
 	// 4. Report success to CP
