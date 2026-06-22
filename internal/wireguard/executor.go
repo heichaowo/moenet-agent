@@ -195,3 +195,15 @@ func (e *Executor) GetStatus(name string) (string, error) {
 	}
 	return string(out), nil
 }
+
+// IsInterfaceUp checks if a network interface is operationally UP.
+// Returns false if the interface doesn't exist or is DOWN/UNKNOWN.
+func (e *Executor) IsInterfaceUp(name string) bool {
+	data, err := os.ReadFile(fmt.Sprintf("/sys/class/net/%s/operstate", name))
+	if err != nil {
+		return false
+	}
+	state := strings.TrimSpace(string(data))
+	// WireGuard interfaces report "unknown" when UP (no carrier concept)
+	return state == "up" || state == "unknown"
+}

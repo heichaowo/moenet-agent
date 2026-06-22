@@ -373,8 +373,8 @@ func (s *SessionSync) verifySession(ctx context.Context, session *BgpSession) er
 		needsRecovery := false
 		if !s.wgExecutor.InterfaceExists(session.Interface) {
 			needsRecovery = true
-		} else if _, err := s.wgExecutor.GetStatus(session.Interface); err != nil {
-			// Interface exists in /proc/net/dev but wg show fails → broken
+		} else if !s.wgExecutor.IsInterfaceUp(session.Interface) {
+			// Interface exists but is DOWN (e.g., failed migration, port conflict)
 			needsRecovery = true
 		}
 
