@@ -236,12 +236,14 @@ func (s *SessionSync) processSession(ctx context.Context, session *BgpSession) e
 	switch session.Status {
 	case StatusQueuedForSetup:
 		return s.setupSession(ctx, session)
-	case StatusEnabled:
+	case StatusEnabled, StatusProblem:
+		// Both ENABLED and PROBLEM sessions go through verifySession.
+		// If the WG interface is missing/DOWN, auto-recovery recreates it
+		// and reports ENABLED. Otherwise, health checks run and may
+		// delegate to handleProblemSession for bounce/restart.
 		return s.verifySession(ctx, session)
 	case StatusQueuedForDelete:
 		return s.deleteSession(ctx, session)
-	case StatusProblem:
-		return s.handleProblemSession(ctx, session)
 	case StatusDisabled:
 		// Disabled sessions: ensure config is removed, don't report error
 		return s.cleanupDisabledSession(ctx, session)
