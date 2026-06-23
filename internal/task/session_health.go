@@ -128,3 +128,19 @@ func bounceInterface(name string) error {
 	}
 	return nil
 }
+
+// hasIPv6Address checks if a network interface has a specific IPv6 address assigned.
+// addrWithPrefix should be in format "fe80::998:101:2:1/64".
+// Returns false if the address is missing or the interface doesn't exist.
+func hasIPv6Address(ifname, addrWithPrefix string) bool {
+	addr := addrWithPrefix
+	if idx := strings.Index(addr, "/"); idx > 0 {
+		addr = addr[:idx]
+	}
+
+	out, err := exec.Command("ip", "-6", "addr", "show", "dev", ifname).Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), addr)
+}

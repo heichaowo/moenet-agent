@@ -427,6 +427,32 @@ func (s *SessionSync) verifySession(ctx context.Context, session *BgpSession) er
 	} else {
 		state, found := parseBIRDProtocolState(birdResult)
 		if found && state != "Established" {
+			// --- Self-heal: check for missing link-local address ---
+			// After agent restart, WG interfaces survive in kernel but lose
+			// userspace-assigned IPv6 addresses. BIRD can't bind the source
+			// address, leaving BGP stuck in Idle. Re-add if missing and let
+			// the next sync cycle re-evaluate instead of full remediation.
+			if session.Interface != "" {
+				linkLocalAddr := deriveLLAFromLoopback(s.config.WireGuard.DN42IPv6)
+				if linkLocalAddr != "" && !hasIPv6Address(session.Interface, linkLocalAddr) {
+					slog.Warn("self-heal: link-local address missing, re-adding",
+						"interface", session.Interface, "addr", linkLocalAddr,
+						"asn", session.ASN, "bgp_state", state)
+					if err := s.wgExecutor.AddAddress(session.Interface, linkLocalAddr); err != nil {
+						slog.Warn("self-heal: failed to re-add link-local address",
+							"interface", session.Interface, "error", err)
+					} else {
+						// Address restored — restart this specific BGP protocol
+						// so BIRD re-binds the source address immediately.
+						if _, restartErr := s.birdPool.Execute("restart \"" + protocolName + "\""); restartErr != nil {
+							slog.Warn("self-heal: BIRD protocol restart failed after address restore",
+								"protocol", protocolName, "error", restartErr)
+						}
+						// Skip reporting as problem this cycle; next cycle will re-evaluate.
+						return nil
+					}
+				}
+			}
 			problems = append(problems, fmt.Sprintf("BGP state is %s", state))
 		}
 	}

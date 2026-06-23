@@ -126,6 +126,9 @@ func main() {
 	// Create peer status handler
 	peerHandler := api.NewPeerHandler(birdPool, wgExecutor, cfg.ControlPlane.Token)
 
+	// Create health handler
+	healthHandler := api.NewHealthHandler(birdPool, wgExecutor, cfg.ControlPlane.Token, cfg.Node.Name, cfg.WireGuard.DN42IPv6)
+
 	// Create blacklist manager and handler
 	blacklistMgr := blacklist.NewManager("/etc/bird/blacklist.conf", birdPool)
 	blacklistHandler := api.NewBlacklistHandler(blacklistMgr, cfg.ControlPlane.Token)
@@ -172,6 +175,10 @@ func main() {
 	mux.HandleFunc("/blacklist", blacklistHandler.HandleGetBlacklist)
 	mux.HandleFunc("/blacklist/add", blacklistHandler.HandleAddBlacklist)
 	mux.HandleFunc("/blacklist/remove", blacklistHandler.HandleRemoveBlacklist)
+
+	// Health diagnostics and repair
+	mux.HandleFunc("/health/sessions", healthHandler.HandleHealthSessions)
+	mux.HandleFunc("/health/fix", healthHandler.HandleHealthFix)
 
 	server := &http.Server{
 		Addr:         cfg.Server.Listen,
