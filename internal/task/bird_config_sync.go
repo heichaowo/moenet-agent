@@ -979,8 +979,8 @@ include "cold_potato.conf";
 # eBGP Template - External peers (supports LLA)
 # =============================================================================
 template bgp dn42_peer {
-    local as 4242420998;
-    
+    local as {{.Node.ASN}};
+
     graceful restart on;
     graceful restart time 120;
     

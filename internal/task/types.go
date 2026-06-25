@@ -148,6 +148,7 @@ type BirdConfigResponse struct {
 // BirdNodeConfig contains node-specific settings
 type BirdNodeConfig struct {
 	ID                 int    `json:"id"`
+	ASN                uint32 `json:"asn"` // node's own ASN for eBGP local as
 	Name               string `json:"name"`
 	Type               string `json:"type"`
 	Bandwidth          string `json:"bandwidth"`
