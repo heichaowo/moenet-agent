@@ -148,7 +148,7 @@ func mergeConfig(bootstrap BootstrapConfig, remote *RemoteConfig) *Config {
 		cfg.ControlPlane.RequestTimeout = 15
 	}
 	if cfg.ControlPlane.HeartbeatInterval == 0 {
-		cfg.ControlPlane.HeartbeatInterval = 30
+		cfg.ControlPlane.HeartbeatInterval = envIntDefault("MOENET_HEARTBEAT_INTERVAL", 30)
 	}
 	if cfg.ControlPlane.SyncInterval == 0 {
 		cfg.ControlPlane.SyncInterval = 60

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -103,6 +104,7 @@ func (h *Heartbeat) sendHeartbeat(ctx context.Context, version string) error {
 		MeshPublicKey: h.getMeshPublicKey(),
 		PublicIPv4:    ipv4, // Only set if changed
 		PublicIPv6:    ipv6, // Only set if changed
+		Tunnels:       h.getTunnelUsage(),
 	}
 
 	body, err := json.Marshal(map[string]interface{}{
@@ -212,6 +214,46 @@ func (h *Heartbeat) getNetStat(fieldIdx int) uint64 {
 		total += val
 	}
 	return total
+}
+
+// getTunnelUsage reads per-peering-tunnel byte counters from
+// /sys/class/net/dn42_<peerASN>/statistics for usage-based net settlement.
+func (h *Heartbeat) getTunnelUsage() []TunnelUsage {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	entries, err := os.ReadDir("/sys/class/net")
+	if err != nil {
+		return nil
+	}
+	var out []TunnelUsage
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasPrefix(name, "dn42_") {
+			continue
+		}
+		asn, err := strconv.ParseUint(strings.TrimPrefix(name, "dn42_"), 10, 32)
+		if err != nil {
+			continue
+		}
+		out = append(out, TunnelUsage{
+			PeerASN: uint32(asn),
+			Tx:      readNetCounter("/sys/class/net/" + name + "/statistics/tx_bytes"),
+			Rx:      readNetCounter("/sys/class/net/" + name + "/statistics/rx_bytes"),
+		})
+	}
+	return out
+}
+
+// readNetCounter reads a single uint64 counter file, returning 0 on any error.
+func readNetCounter(path string) uint64 {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var v uint64
+	_, _ = fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &v)
+	return v
 }
 
 // getTCPConns returns number of established TCP connections

@@ -135,6 +135,17 @@ type HeartbeatPayload struct {
 	MeshPublicKey string `json:"meshPublicKey,omitempty"`
 	PublicIPv4    string `json:"publicIpv4,omitempty"`
 	PublicIPv6    string `json:"publicIpv6,omitempty"`
+	// Per-peering-tunnel byte counters (one entry per dn42_<peerASN> interface),
+	// for usage-based net settlement. Cumulative since interface creation.
+	Tunnels []TunnelUsage `json:"tunnels,omitempty"`
+}
+
+// TunnelUsage holds cumulative byte counters for one peering tunnel.
+// Tx = bytes this node sent to the peer; Rx = bytes received from the peer.
+type TunnelUsage struct {
+	PeerASN uint32 `json:"peerAsn"`
+	Tx      uint64 `json:"tx"`
+	Rx      uint64 `json:"rx"`
 }
 
 // BirdConfigResponse represents the /bird-config API response

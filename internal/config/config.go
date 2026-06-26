@@ -4,7 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 )
+
+// envIntDefault returns a positive integer from env var `key`, else `def`.
+func envIntDefault(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return def
+}
 
 // Config represents the agent configuration
 type Config struct {
@@ -112,7 +123,7 @@ func Load(path string) (*Config, error) {
 		cfg.ControlPlane.RequestTimeout = 15
 	}
 	if cfg.ControlPlane.HeartbeatInterval == 0 {
-		cfg.ControlPlane.HeartbeatInterval = 30
+		cfg.ControlPlane.HeartbeatInterval = envIntDefault("MOENET_HEARTBEAT_INTERVAL", 30)
 	}
 	if cfg.ControlPlane.SyncInterval == 0 {
 		cfg.ControlPlane.SyncInterval = 60
