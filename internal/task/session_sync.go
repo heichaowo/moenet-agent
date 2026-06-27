@@ -571,6 +571,19 @@ func (s *SessionSync) handleProblemSession(ctx context.Context, session *BgpSess
 		if err := bounceInterface(session.Interface); err != nil {
 			slog.Warn("WG interface bounce failed", "interface", session.Interface, "error", err)
 		}
+		// Bouncing the interface (ip link down/up) flushes its link-local
+		// address, which BIRD binds as the BGP source. If we don't restore it,
+		// remediation actively breaks the session: LLA gone -> BGP stuck Idle ->
+		// remediation bounces again -> the two ends oscillate out of phase and
+		// never re-establish. Re-add the LLA and restart the protocol so it binds.
+		if lla := s.localLinkLocal(); lla != "" {
+			if err := s.wgExecutor.AddAddress(session.Interface, lla); err != nil {
+				slog.Warn("failed to restore link-local after bounce",
+					"interface", session.Interface, "error", err)
+			} else if _, err := s.birdPool.Execute("restart \"" + protocolName + "\""); err != nil {
+				slog.Warn("BIRD restart after LLA restore failed", "protocol", protocolName, "error", err)
+			}
+		}
 	}
 
 	// Wait briefly for services to recover
@@ -763,10 +776,23 @@ func (s *SessionSync) reportStatus(ctx context.Context, sessionUUID string, stat
 // if the derivation source is missing, BIRD can never bind its source address
 // and every session silently rots in Idle.
 func (s *SessionSync) localLinkLocal() string {
-	if lla := s.config.WireGuard.DN42IPv6LinkLocal; lla != "" {
-		return lla
+	lla := s.config.WireGuard.DN42IPv6LinkLocal
+	if lla == "" {
+		lla = deriveLLAFromLoopback(s.config.WireGuard.DN42IPv6)
 	}
-	return s.localLinkLocal()
+	if lla == "" {
+		return ""
+	}
+	// Guarantee a /64 prefix. The CP-provided DN42IPv6LinkLocal carries no
+	// prefix, so `ip addr add` would default it to /128 — a host address with no
+	// on-link subnet. The peer's link-local then isn't reachable over the
+	// tunnel, WG passes no data, and BGP sits in Idle forever even though the
+	// address "looks" present (hasIPv6Address only matches the bare address).
+	// deriveLLAFromLoopback already appends /64.
+	if !strings.Contains(lla, "/") {
+		lla += "/64"
+	}
+	return lla
 }
 
 // GetSession returns a session by UUID
