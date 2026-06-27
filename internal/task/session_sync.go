@@ -50,6 +50,13 @@ type SessionSync struct {
 	// Capped at maxRemediationsPerCycle to avoid blocking the sync goroutine
 	// with stacked time.Sleep calls when multiple sessions are broken.
 	remediationCount int
+
+	// lastReported tracks the last status reported per session UUID so we only
+	// POST to the CP on an actual transition. This both avoids per-cycle status
+	// spam and lets a recovered session reconcile back to ENABLED — the CP does
+	// not infer recovery on its own, so without this a session that flapped once
+	// stays "PROBLEM" forever even after BGP is healthy again.
+	lastReported map[string]int
 }
 
 // NewSessionSync creates a new session sync handler
@@ -65,6 +72,7 @@ func NewSessionSync(cfg *config.Config, birdPool *bird.Pool, birdConfig *bird.Co
 		fwExecutor:      fwExecutor,
 		sessions:        make(map[string]*BgpSession),
 		orphanTracker:   make(map[string]int),
+		lastReported:    make(map[string]int),
 	}
 }
 
@@ -312,7 +320,7 @@ func (s *SessionSync) setupSession(ctx context.Context, session *BgpSession) err
 		}
 
 		// Assign local link-local address for BGP neighbor communication
-		linkLocalAddr := deriveLLAFromLoopback(s.config.WireGuard.DN42IPv6)
+		linkLocalAddr := s.localLinkLocal()
 		if linkLocalAddr != "" {
 			if err := s.wgExecutor.AddAddress(session.Interface, linkLocalAddr); err != nil {
 				log.Printf("[SessionSync] Warning: failed to add link-local address to %s: %v", session.Interface, err)
@@ -322,7 +330,7 @@ func (s *SessionSync) setupSession(ctx context.Context, session *BgpSession) err
 
 	// 2. Generate BIRD configuration
 	// Derive source address from loopback (strip /64 prefix len for BIRD)
-	sourceAddr := deriveLLAFromLoopback(s.config.WireGuard.DN42IPv6)
+	sourceAddr := s.localLinkLocal()
 	if idx := strings.Index(sourceAddr, "/"); idx > 0 {
 		sourceAddr = sourceAddr[:idx]
 	}
@@ -433,7 +441,7 @@ func (s *SessionSync) verifySession(ctx context.Context, session *BgpSession) er
 			// address, leaving BGP stuck in Idle. Re-add if missing and let
 			// the next sync cycle re-evaluate instead of full remediation.
 			if session.Interface != "" {
-				linkLocalAddr := deriveLLAFromLoopback(s.config.WireGuard.DN42IPv6)
+				linkLocalAddr := s.localLinkLocal()
 				if linkLocalAddr != "" && !hasIPv6Address(session.Interface, linkLocalAddr) {
 					slog.Warn("self-heal: link-local address missing, re-adding",
 						"interface", session.Interface, "addr", linkLocalAddr,
@@ -480,6 +488,14 @@ func (s *SessionSync) verifySession(ctx context.Context, session *BgpSession) er
 			"asn", session.ASN, "problems", strings.Join(problems, "; "))
 		session.LastError = strings.Join(problems, "; ")
 		return s.handleProblemSession(ctx, session)
+	}
+
+	// Healthy: reconcile the CP back to ENABLED. The CP never infers recovery on
+	// its own, so a session that was once marked PROBLEM would otherwise display
+	// as "converging" forever even though BGP is Established. Deduped in
+	// reportStatus, so this only hits the CP on the PROBLEM→ENABLED transition.
+	if err := s.reportStatus(ctx, session.UUID, StatusEnabled, ""); err != nil {
+		slog.Warn("failed to reconcile enabled status", "uuid", session.UUID, "error", err)
 	}
 
 	return nil
@@ -689,6 +705,16 @@ func (s *SessionSync) cleanupDisabledSession(_ context.Context, session *BgpSess
 
 // reportStatus reports session status change to Control Plane
 func (s *SessionSync) reportStatus(ctx context.Context, sessionUUID string, status int, lastError string) error {
+	// Skip redundant reports: only POST on an actual status transition. Deletion
+	// (status 0) always goes through — it destroys the row on the CP and must not
+	// be suppressed by a stale cache entry.
+	s.mu.RLock()
+	prev, seen := s.lastReported[sessionUUID]
+	s.mu.RUnlock()
+	if seen && prev == status && status != StatusDeleted {
+		return nil
+	}
+
 	url := fmt.Sprintf("%s/api/v1/agent/%s/modify", s.config.ControlPlane.URL, s.config.Node.Name)
 
 	payload := map[string]interface{}{
@@ -723,7 +749,24 @@ func (s *SessionSync) reportStatus(ctx context.Context, sessionUUID string, stat
 		return fmt.Errorf("CP returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
+	s.mu.Lock()
+	s.lastReported[sessionUUID] = status
+	s.mu.Unlock()
+
 	return nil
+}
+
+// localLinkLocal returns this node's BGP source link-local address in CIDR form
+// (e.g. "fe80::998:203:2:1/64"). It prefers the CP-provided value and falls back
+// to deriving it from the loopback, so the address stays resolvable even if one
+// of the two config fields is empty. This is what keeps the LLA self-heal alive:
+// if the derivation source is missing, BIRD can never bind its source address
+// and every session silently rots in Idle.
+func (s *SessionSync) localLinkLocal() string {
+	if lla := s.config.WireGuard.DN42IPv6LinkLocal; lla != "" {
+		return lla
+	}
+	return s.localLinkLocal()
 }
 
 // GetSession returns a session by UUID
