@@ -211,11 +211,32 @@ func (c *Conn) readResponse() (string, error) {
 		}
 		result.WriteString(line)
 
-		// BIRD responses end with a line starting with 4 digits and a space
-		// (e.g., "0001 BIRD 3.0.0 ready.\n")
-		if len(line) >= 5 && line[4] == ' ' {
+		// A BIRD reply ends with a line whose 4-char numeric code is followed by
+		// a SPACE (e.g. "0000 ", "0003 Reconfigured", "8001 ..."). Continuation
+		// lines are either "<code>-..." (dash) or, for detail blocks like
+		// `show protocols all`, plain text with leading spaces and NO code. The
+		// old check (line[4]==' ') wrongly treated a deeply-indented detail line
+		// such as "     Neighbor address: ..." as the terminator, returning a
+		// truncated reply and leaving the rest in the socket buffer — which
+		// desynchronised the pooled connection so every later command read the
+		// previous reply's tail (BGP state checks then silently mis-fired).
+		if isReplyTerminator(line) {
 			break
 		}
 	}
 	return result.String(), nil
+}
+
+// isReplyTerminator reports whether a BIRD control-socket line ends a reply:
+// the first four bytes are the numeric status code and the fifth is a space.
+func isReplyTerminator(line string) bool {
+	if len(line) < 5 || line[4] != ' ' {
+		return false
+	}
+	for i := 0; i < 4; i++ {
+		if line[i] < '0' || line[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
