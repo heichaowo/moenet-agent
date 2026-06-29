@@ -127,6 +127,21 @@ These can override config file settings:
 | `MOENET_NODE_ID`   | `node.id`          | Node ID            |
 | `MOENET_CP_URL`    | `controlPlane.url` | Control Plane URL  |
 | `MOENET_CP_TOKEN`  | `controlPlane.token` | Agent token      |
+| `MESH_ENABLED`     | —                  | Set to `false` to disable full-mesh iBGP-over-WireGuard (MeshSync). Default on. |
+
+## BGP Local AS & RPKI
+
+The agent renders BIRD from the Control Plane policy, not from hardcoded values:
+the eBGP/iBGP `local as` comes from the policy's DN42 ASN, and RPKI servers are
+rendered from the policy's `rpkiServers` list. To run a different ASN or RPKI
+set, edit the `bird_policies` row on the Control Plane — no agent rebuild needed.
+
+## Auto-update integrity
+
+The auto-updater verifies the downloaded binary's SHA256 against the release's
+`SHA256SUMS` asset and refuses to install on a mismatch (or if `SHA256SUMS` is
+absent). Auto-update is also Control-Plane controlled — see `AGENT_AUTOUPDATE`
+on the CP.
 
 ## Configuration Locations
 
