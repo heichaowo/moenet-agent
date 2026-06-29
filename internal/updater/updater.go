@@ -225,14 +225,41 @@ func (u *Updater) DownloadAndApply(ctx context.Context, release *GitHubRelease) 
 		return fmt.Errorf("no asset found for %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 
+	// Locate the SHA256SUMS asset and fetch the expected digest BEFORE installing.
+	// Fail closed: without a verifiable checksum we refuse to replace the binary,
+	// so a compromised release/asset URL can't push an unsigned binary (the old
+	// "does it run with -v" check accepts any valid ELF).
+	var sumsURL string
+	for i := range release.Assets {
+		if strings.Contains(release.Assets[i].Name, "SHA256SUMS") {
+			sumsURL = release.Assets[i].BrowserDownloadURL
+			break
+		}
+	}
+	if sumsURL == "" {
+		return fmt.Errorf("release %s has no SHA256SUMS asset; refusing to update", release.TagName)
+	}
+	expectedSum, err := u.fetchExpectedSHA256(ctx, sumsURL, assetName)
+	if err != nil {
+		return fmt.Errorf("fetch checksum: %w", err)
+	}
+
 	log.Printf("[Updater] Downloading %s (%d bytes)", asset.Name, asset.Size)
 
 	// Download to temp file
 	tempPath := u.binaryPath + ".new"
-	if err := u.downloadFile(ctx, asset.BrowserDownloadURL, tempPath); err != nil {
+	actualSum, err := u.downloadFile(ctx, asset.BrowserDownloadURL, tempPath)
+	if err != nil {
 		os.Remove(tempPath)
 		return fmt.Errorf("download: %w", err)
 	}
+
+	// Integrity check — refuse to install on mismatch.
+	if !strings.EqualFold(actualSum, expectedSum) {
+		os.Remove(tempPath)
+		return fmt.Errorf("checksum mismatch for %s: expected %s, got %s", asset.Name, expectedSum, actualSum)
+	}
+	log.Printf("[Updater] Checksum verified: %s", actualSum[:16]+"...")
 
 	// Make executable
 	if err := os.Chmod(tempPath, 0755); err != nil {
@@ -274,45 +301,80 @@ func (u *Updater) DownloadAndApply(ctx context.Context, release *GitHubRelease) 
 	return nil
 }
 
-// downloadFile downloads a file from URL to the given path
-func (u *Updater) downloadFile(ctx context.Context, url, path string) error {
+// downloadFile downloads a file from URL to the given path and returns the
+// SHA256 hex digest of the downloaded bytes.
+func (u *Updater) downloadFile(ctx context.Context, url, path string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("User-Agent", "moenet-agent-updater")
 
 	resp, err := u.httpClient.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+		return "", fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+		return "", err
 	}
 
 	out, err := os.Create(path)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer out.Close()
 
 	h := sha256.New()
 	written, err := io.Copy(io.MultiWriter(out, h), resp.Body)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	checksum := hex.EncodeToString(h.Sum(nil))
 	log.Printf("[Updater] Downloaded %d bytes, SHA256: %s", written, checksum[:16]+"...")
 
-	return nil
+	return checksum, nil
+}
+
+// fetchExpectedSHA256 downloads a SHA256SUMS file and returns the expected hex
+// digest for the asset whose filename contains assetName.
+func (u *Updater) fetchExpectedSHA256(ctx context.Context, url, assetName string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "moenet-agent-updater")
+
+	resp, err := u.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("checksums status: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+
+	// `sha256sum *` format: "<hex>  <filename>" per line.
+	for _, line := range strings.Split(string(body), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && strings.Contains(fields[len(fields)-1], assetName) {
+			return strings.ToLower(fields[0]), nil
+		}
+	}
+	return "", fmt.Errorf("no checksum entry for %s", assetName)
 }
 
 // GetCurrentVersion returns the current version
