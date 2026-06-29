@@ -71,7 +71,9 @@ func (g *ConfigGenerator) GenerateSession(cfg *SessionConfig) error {
 	data := map[string]interface{}{
 		"Name":            cfg.Name,
 		"Description":     cfg.Description,
-		"LocalASN":        4242420216, // Local ASN (hardcoded for now)
+		// LocalASN removed: it was a dead, wrongly-hardcoded ASN (4242420216).
+		// Per-session files use `from dn42_peer`, inheriting that template's
+		// `local as {{.Policy.DN42As}}`, so this map key was never used.
 		"RemoteASN":       cfg.ASN,
 		"NeighborAddr":    neighborAddr,
 		"Interface":       cfg.Interface,

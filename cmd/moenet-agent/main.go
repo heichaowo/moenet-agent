@@ -227,9 +227,16 @@ func main() {
 		latencyProbe.UpdatePeersFromSessions(infos)
 	})
 
+	// Mesh (full-mesh iBGP over WireGuard) can be disabled where a different
+	// peering/interconnect mechanism is used (bug-list #12). Default on.
+	meshEnabled := os.Getenv("MESH_ENABLED") != "false"
+
 	// Create WaitGroup for background tasks
 	var wg sync.WaitGroup
-	taskCount := 8 // heartbeat, sessionSync, metricCollector, rttMeasurement, meshSync, ibgpSync, birdConfigSync, latencyProbe
+	taskCount := 7 // heartbeat, sessionSync, metricCollector, rttMeasurement, ibgpSync, birdConfigSync, latencyProbe
+	if meshEnabled {
+		taskCount++ // meshSync
+	}
 
 	// Initialize auto-updater if enabled
 	var agentUpdater *updater.Updater
@@ -253,7 +260,11 @@ func main() {
 	go sessionSync.Run(ctx, &wg)
 	go metricCollector.Run(ctx, &wg)
 	go rttMeasurement.Run(ctx, &wg)
-	go meshSync.Run(ctx, &wg)
+	if meshEnabled {
+		go meshSync.Run(ctx, &wg)
+	} else {
+		log.Println("[MeshSync] disabled via MESH_ENABLED=false")
+	}
 	go ibgpSync.Run(ctx, &wg)
 	go birdConfigSync.Run(ctx, &wg)
 	go latencyProbe.Run(ctx, &wg)

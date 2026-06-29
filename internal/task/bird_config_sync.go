@@ -127,17 +127,21 @@ func (s *BirdConfigSync) Sync(ctx context.Context) error {
 		return fmt.Errorf("failed to render bird.conf: %w", err)
 	}
 
-	// Update last config hash
+	// Reload BIRD. Commit the config hash ONLY on success — otherwise a failed
+	// reload would persist a broken config and never retry, because the next
+	// sync would see an unchanged hash and skip the re-render (bug-list #11).
+	// Kept non-fatal so the agent stays up; the stale hash makes the next sync
+	// re-render and retry.
+	if err := s.birdPool.Configure(); err != nil {
+		log.Printf("[BirdConfig] ERROR: BIRD reconfigure failed, will retry next sync: %v", err)
+		return nil
+	}
+	log.Println("[BirdConfig] BIRD configuration reloaded successfully")
+
+	// Update last config hash only after a successful reload.
 	s.mu.Lock()
 	s.lastConfigHash = birdConfig.ConfigHash
 	s.mu.Unlock()
-
-	// Reload BIRD
-	if err := s.birdPool.Configure(); err != nil {
-		log.Printf("[BirdConfig] Warning: BIRD reconfigure failed: %v", err)
-	} else {
-		log.Println("[BirdConfig] BIRD configuration reloaded successfully")
-	}
 
 	return nil
 }
@@ -979,7 +983,7 @@ include "cold_potato.conf";
 # eBGP Template - External peers (supports LLA)
 # =============================================================================
 template bgp dn42_peer {
-    local as 4242420998;
+    local as {{.Policy.DN42As}};
     
     graceful restart on;
     graceful restart time 120;
@@ -1006,7 +1010,7 @@ template bgp dn42_peer {
 # Uses loopback as source, reachable via Babel IGP
 # =============================================================================
 template bgp dn42_internal {
-    local as 4242420998;
+    local as {{.Policy.DN42As}};
     hold time 240;
     keepalive time 80;
     connect retry time 30;
