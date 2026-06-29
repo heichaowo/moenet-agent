@@ -947,7 +947,21 @@ protocol kernel kernel2 {
 roa4 table dn42_roa4;
 roa6 table dn42_roa6;
 
-# RPKI ROA for DN42 - Multiple sources for redundancy
+# RPKI ROA for DN42 - sources from the CP policy (bug-list #6). The CP seeds a
+# default policy with two standard DN42 RPKI servers; deployments can customize
+# them. Falls back to rpki.akae.re if the policy somehow has none.
+{{- if .Policy.RPKIServers}}
+{{- range .Policy.RPKIServers}}
+protocol rpki rpki_{{.Name}} {
+    roa4 { table dn42_roa4; };
+    roa6 { table dn42_roa6; };
+    remote "{{.Host}}" port {{.Port}};
+    retry keep 90;
+    refresh keep 900;
+    expire keep 172800;
+}
+{{end -}}
+{{- else}}
 protocol rpki rpki_akae {
     roa4 { table dn42_roa4; };
     roa6 { table dn42_roa6; };
@@ -956,15 +970,7 @@ protocol rpki rpki_akae {
     refresh keep 900;
     expire keep 172800;
 }
-
-protocol rpki rpki_launchpadx {
-    roa4 { table dn42_roa4; };
-    roa6 { table dn42_roa6; };
-    remote "rpki.dn42.launchpadx.top" port 8082;
-    retry keep 90;
-    refresh keep 900;
-    expire keep 172800;
-}
+{{- end}}
 
 # =============================================================================
 # Babel IGP - Managed by moenet-agent
