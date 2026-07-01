@@ -57,6 +57,13 @@ type SessionSync struct {
 	// not infer recovery on its own, so without this a session that flapped once
 	// stays "PROBLEM" forever even after BGP is healthy again.
 	lastReported map[string]int
+
+	// lastObservedEndpoint tracks the last learned peer source IP reported per
+	// session UUID (NAT peers only). The CP can't inspect a NAT peer's endpoint
+	// at approval time — it has none — so the agent reports the IP the kernel
+	// learns from the handshake and the CP geolocates it for policy enforcement.
+	// Deduped so we only POST when the observed IP actually changes.
+	lastObservedEndpoint map[string]string
 }
 
 // NewSessionSync creates a new session sync handler
@@ -70,9 +77,10 @@ func NewSessionSync(cfg *config.Config, birdPool *bird.Pool, birdConfig *bird.Co
 		birdConfig:      birdConfig,
 		wgExecutor:      wgExecutor,
 		fwExecutor:      fwExecutor,
-		sessions:        make(map[string]*BgpSession),
-		orphanTracker:   make(map[string]int),
-		lastReported:    make(map[string]int),
+		sessions:             make(map[string]*BgpSession),
+		orphanTracker:        make(map[string]int),
+		lastReported:         make(map[string]int),
+		lastObservedEndpoint: make(map[string]string),
 	}
 }
 
@@ -509,7 +517,68 @@ func (s *SessionSync) verifySession(ctx context.Context, session *BgpSession) er
 		slog.Warn("failed to reconcile enabled status", "uuid", session.UUID, "error", err)
 	}
 
+	// For NAT peers (no configured endpoint) the session is healthy, so a
+	// handshake has happened and the kernel knows the peer's real source IP.
+	// Report it so the CP can geolocate it and enforce CN/region policy that
+	// couldn't be checked at approval time. Only for NAT sessions — a peer with
+	// a declared endpoint was already vetted when the request was approved.
+	if session.Endpoint == "" && session.Interface != "" {
+		s.reportObservedEndpoint(ctx, session)
+	}
+
 	return nil
+}
+
+// reportObservedEndpoint reads the peer's learned source IP for a NAT session
+// and reports it to the CP, deduped so it only POSTs when the IP changes. A
+// failure here is non-fatal: policy enforcement is best-effort and must never
+// block the sync cycle.
+func (s *SessionSync) reportObservedEndpoint(ctx context.Context, session *BgpSession) {
+	ip, err := s.wgExecutor.GetPeerEndpoint(session.Interface)
+	if err != nil || ip == "" {
+		return
+	}
+
+	s.mu.RLock()
+	prev, seen := s.lastObservedEndpoint[session.UUID]
+	s.mu.RUnlock()
+	if seen && prev == ip {
+		return
+	}
+
+	url := fmt.Sprintf("%s/api/v1/agent/%s/modify", s.config.ControlPlane.URL, s.config.Node.Name)
+	body, err := json.Marshal(map[string]interface{}{
+		"uuid":             session.UUID,
+		"observedEndpoint": ip,
+	})
+	if err != nil {
+		return
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+s.config.ControlPlane.Token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		slog.Warn("failed to report observed endpoint", "uuid", session.UUID, "error", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		slog.Warn("CP rejected observed endpoint report",
+			"uuid", session.UUID, "status", resp.StatusCode, "body", string(respBody))
+		return
+	}
+
+	s.mu.Lock()
+	s.lastObservedEndpoint[session.UUID] = ip
+	s.mu.Unlock()
+	slog.Info("reported observed NAT peer endpoint", "uuid", session.UUID, "asn", session.ASN, "ip", ip)
 }
 
 // deleteSession removes a peering session

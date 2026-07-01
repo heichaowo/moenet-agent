@@ -196,6 +196,50 @@ func (e *Executor) GetStatus(name string) (string, error) {
 	return string(out), nil
 }
 
+// GetPeerEndpoint returns the peer's currently-learned source IP (no port) for
+// a single-peer interface. For NAT peers configured without an endpoint, the
+// kernel populates this from the most recent handshake — it's the only place we
+// can observe where the peer actually connects from. Returns "" if the peer has
+// no endpoint yet (never handshaked). The port is stripped; only the host IP is
+// returned so the CP can geolocate it.
+func (e *Executor) GetPeerEndpoint(name string) (string, error) {
+	// `wg show <iface> endpoints` prints one line per peer: "<pubkey>\t<ip:port>".
+	// "(none)" appears when no endpoint has been learned yet.
+	out, err := exec.Command("wg", "show", name, "endpoints").Output()
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		ep := fields[len(fields)-1]
+		if ep == "(none)" || ep == "" {
+			continue
+		}
+		return stripPort(ep), nil
+	}
+	return "", nil
+}
+
+// stripPort removes the trailing :port from a WireGuard endpoint, handling both
+// "1.2.3.4:51820" and "[2001:db8::1]:51820" forms, and returns the bare host IP.
+func stripPort(ep string) string {
+	if strings.HasPrefix(ep, "[") {
+		// [IPv6]:port
+		if end := strings.LastIndex(ep, "]"); end > 0 {
+			return ep[1:end]
+		}
+	}
+	// IPv4:port — a bare IPv6 has multiple colons and no brackets, so only
+	// strip when there's exactly one colon.
+	if strings.Count(ep, ":") == 1 {
+		return ep[:strings.LastIndex(ep, ":")]
+	}
+	return ep
+}
+
 // IsInterfaceUp checks if a network interface is operationally UP.
 // Returns false if the interface doesn't exist or is DOWN/UNKNOWN.
 func (e *Executor) IsInterfaceUp(name string) bool {
