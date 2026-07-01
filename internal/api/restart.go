@@ -4,10 +4,16 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"regexp"
 
 	"github.com/moenet/moenet-agent/internal/bird"
 	"github.com/moenet/moenet-agent/internal/wireguard"
 )
+
+// validPeerName restricts peer_name to BIRD protocol / interface names we
+// generate (dn42_<asn> / ibgp_<id>). This blocks injecting a newline (and thus
+// a second command) into the BIRD control socket via `disable <peer_name>`.
+var validPeerName = regexp.MustCompile(`^(dn42|ibgp)_[0-9]{1,15}$`)
 
 // RestartHandler handles peer restart operations
 type RestartHandler struct {
@@ -57,6 +63,11 @@ func (h *RestartHandler) HandleRestart(w http.ResponseWriter, r *http.Request) {
 	if req.PeerName == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(ErrorResponse{Error: "peer_name is required"})
+		return
+	}
+	if !validPeerName.MatchString(req.PeerName) {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(ErrorResponse{Error: "invalid peer_name"})
 		return
 	}
 

@@ -134,33 +134,44 @@ func (s *SessionSync) Sync(ctx context.Context) error {
 		}
 	}
 
-	// Find and clean up deleted sessions (in local but not in remote)
-	needBirdReload := false
+	// Find deleted sessions (in local but not in remote) under the lock, then do
+	// the slow I/O (config file removal + `ip link` subprocess) AFTER releasing
+	// it — otherwise other readers (status reports, GetSession) block for seconds
+	// during bulk cleanup.
+	type orphanSession struct {
+		uuid, peerName, iface string
+	}
+	var orphans []orphanSession
 	s.mu.RLock()
 	for uuid, localSession := range s.sessions {
 		if _, exists := remoteMap[uuid]; !exists {
-			slog.Info("session removed from CP, cleaning up",
-				"uuid", uuid, "asn", localSession.ASN)
-
-			// Remove BIRD config
-			peerName := fmt.Sprintf("dn42_%d", localSession.ASN)
-			if err := s.birdConfig.RemoveSession(peerName); err != nil {
-				slog.Warn("failed to remove BIRD config for orphan",
-					"peer", peerName, "error", err)
-			} else {
-				needBirdReload = true
-			}
-
-			// Remove WireGuard interface
-			if localSession.Interface != "" {
-				if err := s.wgExecutor.DeleteInterface(localSession.Interface); err != nil {
-					slog.Warn("failed to delete WG interface for orphan",
-						"interface", localSession.Interface, "error", err)
-				}
-			}
+			orphans = append(orphans, orphanSession{
+				uuid:     uuid,
+				peerName: fmt.Sprintf("dn42_%d", localSession.ASN),
+				iface:    localSession.Interface,
+			})
 		}
 	}
 	s.mu.RUnlock()
+
+	needBirdReload := false
+	for _, o := range orphans {
+		slog.Info("session removed from CP, cleaning up", "uuid", o.uuid)
+
+		if err := s.birdConfig.RemoveSession(o.peerName); err != nil {
+			slog.Warn("failed to remove BIRD config for orphan",
+				"peer", o.peerName, "error", err)
+		} else {
+			needBirdReload = true
+		}
+
+		if o.iface != "" {
+			if err := s.wgExecutor.DeleteInterface(o.iface); err != nil {
+				slog.Warn("failed to delete WG interface for orphan",
+					"interface", o.iface, "error", err)
+			}
+		}
+	}
 
 	// Reload BIRD once if any orphan configs were removed
 	if needBirdReload {

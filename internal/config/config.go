@@ -32,7 +32,14 @@ type NodeConfig struct {
 	Region   string `json:"region"`
 	Location string `json:"location"`
 	Provider string `json:"provider"`
+	// ASN is the network's DN42 ASN used for iBGP local-as. Defaults to
+	// 4242420998 (via config.DefaultLocalASN) when unset, so a different
+	// deployment can run its own ASN without editing the source.
+	ASN uint32 `json:"asn"`
 }
+
+// DefaultLocalASN is used for iBGP when NodeConfig.ASN is unset (0).
+const DefaultLocalASN uint32 = 4242420998
 
 // ControlPlaneConfig contains CP communication settings
 type ControlPlaneConfig struct {
