@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -485,7 +486,15 @@ func (lp *LatencyProbe) appendHistory(asn uint32, result ProbeResult) {
 
 // ping executes ICMP ping to a target and returns average RTT in ms.
 func (lp *LatencyProbe) ping(target string) (float64, error) {
-	isIPv6 := strings.Contains(target, ":")
+	// target is a WireGuard endpoint, typically "host:port" (or "[v6]:port").
+	// ping wants the bare host — strip the port so we don't hand ping a colon
+	// that isn't an IPv6 separator (was producing "ping6 host:port" → exit 2).
+	host := target
+	if h, _, err := net.SplitHostPort(target); err == nil {
+		host = h
+	}
+
+	isIPv6 := strings.Contains(host, ":")
 	pingCmd := "ping"
 	if isIPv6 {
 		pingCmd = "ping6"
@@ -498,7 +507,7 @@ func (lp *LatencyProbe) ping(target string) (float64, error) {
 		lp.timeout*time.Duration(lp.pingCount)+5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, pingCmd, "-c", countStr, "-W", timeoutSec, target)
+	cmd := exec.CommandContext(ctx, pingCmd, "-c", countStr, "-W", timeoutSec, host)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return 0, fmt.Errorf("ping failed: %w", err)
