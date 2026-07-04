@@ -148,6 +148,7 @@ func main() {
 	mux.HandleFunc("/trace", toolsHandler.HandleTrace)
 	mux.HandleFunc("/route", toolsHandler.HandleRoute)
 	mux.HandleFunc("/path", toolsHandler.HandlePath)
+	mux.HandleFunc("/dig", toolsHandler.HandleDig)
 
 	// Probe management
 	mux.HandleFunc("/probe", probeHandler.HandleGetStats)

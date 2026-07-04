@@ -98,6 +98,43 @@ func (h *ToolsHandler) HandleTrace(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleDig handles POST /dig - DNS lookup against the DN42 resolver.
+// target is "<domain> [type]" (space-separated); type defaults to A. Runs on the
+// agent because it (unlike the control plane) is on DN42 and can reach the
+// resolver at 172.20.0.53.
+func (h *ToolsHandler) HandleDig(w http.ResponseWriter, r *http.Request) {
+	h.handleTool(w, r, func(target string) (string, error) {
+		fields := strings.Fields(target)
+		if len(fields) == 0 {
+			return "", fmt.Errorf("missing domain")
+		}
+		domain := fields[0]
+		recordType := "A"
+		if len(fields) > 1 {
+			recordType = strings.ToUpper(fields[1])
+		}
+		switch recordType {
+		case "A", "AAAA", "MX", "TXT", "CNAME", "NS", "SOA", "PTR", "SRV", "CAA":
+		default:
+			return "", fmt.Errorf("unsupported record type: %s", recordType)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		cmd := exec.CommandContext(ctx, "dig", "@172.20.0.53", domain, recordType, "+short")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return string(output), nil
+		}
+		result := strings.TrimSpace(string(output))
+		if result == "" {
+			result = "No records found"
+		}
+		return result, nil
+	})
+}
+
 // HandleRoute handles POST /route - BIRD route lookup
 func (h *ToolsHandler) HandleRoute(w http.ResponseWriter, r *http.Request) {
 	h.handleTool(w, r, func(target string) (string, error) {
