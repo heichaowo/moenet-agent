@@ -85,7 +85,7 @@ func (s *State) Enter() error {
 	// Reconfigure BIRD to apply the change
 	if err := s.birdPool.Configure(); err != nil {
 		// Rollback
-		os.WriteFile(maintenanceConfPath, []byte("define MAINTENANCE_MODE = false;\n"), 0644)
+		_ = os.WriteFile(maintenanceConfPath, []byte("define MAINTENANCE_MODE = false;\n"), 0644)
 		return fmt.Errorf("failed to reconfigure BIRD: %w", err)
 	}
 

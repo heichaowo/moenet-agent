@@ -75,7 +75,7 @@ func (m *Manager) Load() error {
 	m.asns = make(map[int]bool)
 
 	match := asnPattern.FindStringSubmatch(content)
-	if match == nil || len(match) < 2 {
+	if len(match) < 2 {
 		// No ASN list found — file might be empty or have "return false"
 		return nil
 	}

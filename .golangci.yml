@@ -17,6 +17,10 @@ linters-settings:
   errcheck:
     check-type-assertions: false
     check-blank: false
+    exclude-functions:
+      # HTTP response encoding: if the client is gone the write just fails and
+      # there's nothing to do — ignoring the error is idiomatic for handlers.
+      - (*encoding/json.Encoder).Encode
 
 issues:
   exclude-rules:
@@ -24,3 +28,7 @@ issues:
     - path: _test\.go
       linters:
         - errcheck
+    # t.Fatal terminates the test, so a deref after a nil-check + t.Fatal is safe;
+    # SA5011 flags these as false positives in tests.
+    - path: _test\.go
+      text: "SA5011"

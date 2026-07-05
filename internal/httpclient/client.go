@@ -149,7 +149,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		lastErr = err
 		if resp != nil {
 			// Drain and close body to allow connection reuse
-			io.Copy(io.Discard, resp.Body)
+			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 			lastResp = resp
 		}

@@ -23,7 +23,9 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # Pin to v1.x — the repo's .golangci.yml is v1-format config, which
+          # golangci-lint v2 (what `latest` now resolves to) can't load (exit 3).
+          version: v1.64.8
 
   test:
     runs-on: ubuntu-latest

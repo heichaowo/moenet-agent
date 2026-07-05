@@ -289,7 +289,7 @@ func (u *Updater) DownloadAndApply(ctx context.Context, release *GitHubRelease) 
 	// Move new binary to current path
 	if err := os.Rename(tempPath, u.binaryPath); err != nil {
 		// Rollback
-		os.Rename(backupPath, u.binaryPath)
+		_ = os.Rename(backupPath, u.binaryPath)
 		return fmt.Errorf("install new: %w", err)
 	}
 

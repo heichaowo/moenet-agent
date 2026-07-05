@@ -143,9 +143,9 @@ func (m *MetricCollector) getSessionRouteCounts(protocolName string) map[string]
 			for _, part := range parts {
 				part = strings.TrimSpace(part)
 				if strings.Contains(part, "imported") {
-					fmt.Sscanf(part, "Routes: %d imported", &imported)
+					_, _ = fmt.Sscanf(part, "Routes: %d imported", &imported)
 				} else if strings.Contains(part, "exported") {
-					fmt.Sscanf(part, "%d exported", &exported)
+					_, _ = fmt.Sscanf(part, "%d exported", &exported)
 				}
 			}
 			break
