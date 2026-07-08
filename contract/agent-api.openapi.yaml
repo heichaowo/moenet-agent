@@ -1,0 +1,189 @@
+openapi: 3.0.3
+info:
+  title: MoeNet Agent HTTP API
+  version: 3.4.7
+  description: >
+    The HTTP API served by moenet-agent on each node (default `:24368`) and
+    called by the Control Plane / Telegram bot.
+
+    This spec is the single source of truth for the request/response shapes. Both
+    sides generate types from it (Go: oapi-codegen; TS: openapi-typescript) so a
+    field/type change can't silently drift between the agent (server) and the
+    bot (client). See contract/README.md.
+servers:
+  - url: http://{host}:{port}
+    variables:
+      host: { default: node.example }
+      port: { default: "24368" }
+
+components:
+  securitySchemes:
+    agentToken:
+      type: http
+      scheme: bearer
+      description: "Shared AGENT_API_KEY, sent as `Authorization: Bearer <token>`."
+  schemas:
+    ToolRequest:
+      type: object
+      required: [target]
+      properties:
+        target:
+          type: string
+          description: >
+            The tool target. For /ping /tcping /trace /route /path it is an
+            IP/host/prefix (tcping accepts host:port). For /dig it is
+            "<domain> [type]" (space-separated; type defaults to A).
+      example: { target: "172.20.0.53" }
+    ToolResponse:
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: string
+          description: Raw command/BIRD output (plain text).
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    ProbeRequest:
+      type: object
+      required: [asn]
+      properties:
+        asn:
+          type: integer
+          format: int64
+          description: DN42 ASN of the peer to probe (e.g. 4242420998).
+    ProbeResult:
+      type: object
+      required: [target, asn, rtt_ms, latency_tier, timestamp, success]
+      properties:
+        target: { type: string }
+        asn: { type: integer, format: int64 }
+        rtt_ms: { type: number, format: double }
+        latency_tier: { type: integer }
+        timestamp: { type: integer, format: int64, description: Unix seconds }
+        success: { type: boolean }
+        error: { type: string, description: Present only on failure }
+    AggregateStats:
+      type: object
+      required: [min_rtt, max_rtt, avg_rtt, samples]
+      properties:
+        min_rtt: { type: number, format: double }
+        max_rtt: { type: number, format: double }
+        avg_rtt: { type: number, format: double }
+        samples: { type: integer }
+    PeerStats:
+      type: object
+      required: [asn, endpoint, last_rtt, last_tier, last_probe, probe_count, fail_count, history]
+      properties:
+        asn: { type: integer, format: int64 }
+        endpoint: { type: string }
+        last_rtt: { type: number, format: double }
+        last_tier: { type: integer }
+        last_probe: { type: integer, format: int64, description: Unix seconds }
+        probe_count: { type: integer }
+        fail_count: { type: integer }
+        stats:
+          description: Absent (omitted) until there is at least one successful probe.
+          allOf: [{ $ref: '#/components/schemas/AggregateStats' }]
+        history:
+          type: array
+          items: { $ref: '#/components/schemas/ProbeResult' }
+    CommunityStats:
+      type: object
+      required: [total_routes, latency_distribution, bandwidth_distribution, crypto_distribution, region_distribution]
+      properties:
+        total_routes: { type: integer }
+        # Distributions are maps (bucket -> count). latency buckets are the tier
+        # numbers 0..8 serialised as string keys.
+        latency_distribution:
+          type: object
+          additionalProperties: { type: integer }
+        bandwidth_distribution:
+          type: object
+          additionalProperties: { type: integer }
+        crypto_distribution:
+          type: object
+          additionalProperties: { type: integer }
+        region_distribution:
+          type: object
+          additionalProperties: { type: integer }
+  requestBodies:
+    ToolReq:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ToolRequest' }
+  responses:
+    ToolResp:
+      description: OK
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ToolResponse' }
+    Err:
+      description: Error (e.g. missing/invalid target, unauthorized)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+security:
+  - agentToken: []
+
+paths:
+  /ping:   { post: { operationId: ping,   summary: ICMP ping,          requestBody: { $ref: '#/components/requestBodies/ToolReq' }, responses: { '200': { $ref: '#/components/responses/ToolResp' }, '401': { $ref: '#/components/responses/Err' } } } }
+  /tcping: { post: { operationId: tcping, summary: TCP connect test,   requestBody: { $ref: '#/components/requestBodies/ToolReq' }, responses: { '200': { $ref: '#/components/responses/ToolResp' }, '401': { $ref: '#/components/responses/Err' } } } }
+  /trace:  { post: { operationId: trace,  summary: Traceroute,         requestBody: { $ref: '#/components/requestBodies/ToolReq' }, responses: { '200': { $ref: '#/components/responses/ToolResp' }, '401': { $ref: '#/components/responses/Err' } } } }
+  /route:  { post: { operationId: route,  summary: BIRD route lookup,  requestBody: { $ref: '#/components/requestBodies/ToolReq' }, responses: { '200': { $ref: '#/components/responses/ToolResp' }, '401': { $ref: '#/components/responses/Err' } } } }
+  /path:   { post: { operationId: path,   summary: BIRD AS-path lookup, requestBody: { $ref: '#/components/requestBodies/ToolReq' }, responses: { '200': { $ref: '#/components/responses/ToolResp' }, '401': { $ref: '#/components/responses/Err' } } } }
+  /dig:
+    post:
+      operationId: dig
+      summary: DNS lookup against the DN42 resolver (target = "<domain> [type]")
+      requestBody: { $ref: '#/components/requestBodies/ToolReq' }
+      responses: { '200': { $ref: '#/components/responses/ToolResp' }, '401': { $ref: '#/components/responses/Err' } }
+  /community:
+    get:
+      operationId: community
+      summary: Aggregate community / route statistics for this node
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommunityStats' }
+        '401': { $ref: '#/components/responses/Err' }
+  /probe/now:
+    post:
+      operationId: probeNow
+      summary: Probe a peer's WireGuard RTT immediately
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProbeRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProbeResult' }
+        '401': { $ref: '#/components/responses/Err' }
+  /probe/stats:
+    post:
+      operationId: probeStats
+      summary: Latency probe stats for a peer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProbeRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PeerStats' }
+        '401': { $ref: '#/components/responses/Err' }
+
+# Reusable request/response bodies (declared under components so the tool paths stay terse).

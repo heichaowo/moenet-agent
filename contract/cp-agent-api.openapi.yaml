@@ -1,0 +1,111 @@
+openapi: 3.0.3
+info:
+  title: MoeNet Control Plane — Agent-facing API
+  version: 1.0.0
+  description: >
+    The Control Plane (moenet-core/packages/api) endpoints that moenet-agent
+    polls. Base path `/api/v1/agent/{router}`.
+
+    Source of truth for the shapes the CP serves and the agent parses. The
+    `bird-config` policy is the one that has bitten us: `dn42As` is a STRING here
+    (it is only interpolated into BIRD templates), even though it is a BIGINT in
+    the DB. Codegen from this spec so the CP can't accidentally send a number.
+    See contract/README.md.
+servers:
+  - url: https://api.moenet.work/api/v1/agent/{router}
+    variables:
+      router: { default: jp1 }
+
+components:
+  securitySchemes:
+    agentToken:
+      type: http
+      scheme: bearer
+  schemas:
+    BirdNodeConfig:
+      type: object
+      required: [id, name, type, bandwidth, regionCode, loopbackIpv4, loopbackIpv6, continentLc, subregionLc, regionCommunity, bandwidthCommunity]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        type: { type: string }
+        bandwidth: { type: string }
+        regionCode: { type: integer }
+        loopbackIpv4: { type: string }
+        loopbackIpv6: { type: string }
+        continentLc: { type: string, example: LC_ORIGIN_AS }
+        subregionLc: { type: string, example: LC_REGION_AS_E }
+        regionCommunity: { type: string, example: DN42_REGION_AS_E }
+        bandwidthCommunity: { type: string, example: DN42_BW_1G_PLUS }
+    RPKIServer:
+      type: object
+      required: [name, host, port]
+      properties:
+        name: { type: string }
+        host: { type: string }
+        port: { type: integer }
+    BirdPolicy:
+      type: object
+      required: [dn42As, dn42Ipv4Prefix, dn42Ipv6Prefix, rpkiServers, ebgpImportLimit, ebgpExportLimit, ibgpImportLimit, ibgpExportLimit, asPathMaxLen]
+      properties:
+        dn42As:
+          type: string
+          description: >
+            MoeNet's DN42 ASN as a STRING (e.g. "4242420998"). The agent's
+            BirdPolicy struct declares this string; sending a JSON number breaks
+            its JSON decode ("cannot unmarshal number into ... of type string").
+          example: "4242420998"
+        dn42Ipv4Prefix: { type: string }
+        dn42Ipv6Prefix: { type: string }
+        rpkiServers:
+          type: array
+          items: { $ref: '#/components/schemas/RPKIServer' }
+        ebgpImportLimit: { type: integer }
+        ebgpExportLimit: { type: integer }
+        ibgpImportLimit: { type: integer }
+        ibgpExportLimit: { type: integer }
+        asPathMaxLen: { type: integer }
+        communities:
+          type: object
+          additionalProperties: true
+        largeCommunities:
+          type: object
+          additionalProperties: true
+    BirdIBGPPeer:
+      type: object
+      required: [nodeId, nodeName, loopbackIpv4, loopbackIpv6, isRr]
+      properties:
+        nodeId: { type: integer }
+        nodeName: { type: string }
+        loopbackIpv4: { type: string }
+        loopbackIpv6: { type: string }
+        isRr: { type: boolean }
+    BirdConfigResponse:
+      type: object
+      required: [configHash, node, policy, ibgpPeers]
+      properties:
+        configHash: { type: string }
+        node: { $ref: '#/components/schemas/BirdNodeConfig' }
+        policy: { $ref: '#/components/schemas/BirdPolicy' }
+        ibgpPeers:
+          type: array
+          items: { $ref: '#/components/schemas/BirdIBGPPeer' }
+
+security:
+  - agentToken: []
+
+paths:
+  /bird-config:
+    get:
+      operationId: getBirdConfig
+      summary: BIRD filters + policy + iBGP peers for this node
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              # The CP wraps responses; the agent reads the payload below.
+              schema: { $ref: '#/components/schemas/BirdConfigResponse' }
+  # TODO(contract): add /config (bootstrap), /mesh, /heartbeat, /modify, /rtt,
+  # /report as they are formalised. bird-config is specced first because its
+  # policy.dn42As is where drift has actually bitten.
