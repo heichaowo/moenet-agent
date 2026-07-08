@@ -47,6 +47,36 @@ jobs:
           files: coverage.out
           fail_ci_if_error: false
 
+  contract-sync:
+    name: Contract sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Vendored specs match moenet-core & generated types are current
+        run: |
+          # 1) The vendored contract/*.yaml must match the source of truth in
+          #    moenet-core@dev (public repo).
+          BASE="https://raw.githubusercontent.com/heichaowo/moenet-core/dev/contract"
+          for f in agent-api.openapi.yaml cp-agent-api.openapi.yaml; do
+            curl -fsSL "$BASE/$f" -o "/tmp/$f"
+            if ! diff -u "contract/$f" "/tmp/$f"; then
+              echo "::error::contract/$f drifted from moenet-core@dev — run scripts/sync-contract.sh and commit."
+              exit 1
+            fi
+          done
+          # 2) The committed generated types must match those specs.
+          go generate ./internal/apicontract/
+          if ! git diff --exit-code -- internal/apicontract; then
+            echo "::error::Generated contract types are stale — run scripts/sync-contract.sh and commit."
+            exit 1
+          fi
+
   build:
     runs-on: ubuntu-latest
     needs: [lint, test]

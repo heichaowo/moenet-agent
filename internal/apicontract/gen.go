@@ -11,6 +11,6 @@
 // The two specs share an `agentToken` security scheme, so they generate into
 // separate subpackages (cpapi, agentapi) to avoid a duplicate-symbol clash.
 //
-//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest -generate types -package cpapi -o cpapi/cp_agent_api.gen.go ../../contract/cp-agent-api.openapi.yaml
-//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest -generate types -package agentapi -o agentapi/agent_api.gen.go ../../contract/agent-api.openapi.yaml
+//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.7.2 -generate types -package cpapi -o cpapi/cp_agent_api.gen.go ../../contract/cp-agent-api.openapi.yaml
+//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.7.2 -generate types -package agentapi -o agentapi/agent_api.gen.go ../../contract/agent-api.openapi.yaml
 package apicontract
