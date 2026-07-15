@@ -1,10 +1,13 @@
 name: Build and Release
 
 on:
+  # dev pushes build the dev-<commit> prereleases for the dev/beta channel.
+  # Versioned (vX.Y.Z) releases are owned by release-please.yml + promote.yml
+  # so they go through the soak gate — do NOT re-add a `tags: v*` trigger here,
+  # or a manual tag would ship straight to the fleet, bypassing the soak.
   push:
     branches: [dev]
-    tags:
-      - 'v*'
+  # Emergency escape hatch: cut a stable release immediately, skipping the soak.
   workflow_dispatch:
     inputs:
       version:

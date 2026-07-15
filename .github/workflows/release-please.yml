@@ -1,0 +1,107 @@
+name: Release Please
+
+# Automated versioned releases for the agent, learning from moenet-core's
+# changesets flow but for Go.
+#
+#   conventional commits on main
+#     -> release-please opens a "Release PR" (bumps version + writes CHANGELOG)
+#     -> merging it creates a DRAFT release (draft avoids ever being "latest")
+#     -> we build the binaries, attach them, and publish it as a PRERELEASE
+#
+# A prerelease is invisible to stable-channel nodes (they read
+# /releases/latest, which excludes prereleases). promote.yml flips it to
+# stable after the soak window — that is the only step that ships to the fleet.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false # a release must never be cancelled mid-flight
+
+env:
+  GO_VERSION: "1.26.4"
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: rp
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+          VERSION: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          COMMIT=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          LDFLAGS="-X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME} -s -w"
+          go build -ldflags="${LDFLAGS}" -o "moenet-agent-${GOOS}-${GOARCH}" ./cmd/moenet-agent
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moenet-agent-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: moenet-agent-${{ matrix.goos }}-${{ matrix.goarch }}
+
+  publish:
+    needs: [release-please, build]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Prepare assets + checksums
+        run: |
+          mkdir -p release
+          for dir in ./artifacts/*/; do
+            binary=$(ls "$dir")
+            cp "$dir/$binary" "release/$binary"
+            chmod +x "release/$binary"
+          done
+          cd release && sha256sum ./* > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Attach binaries and publish as a prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          # Publish the draft as a PRERELEASE. Stable nodes ignore it until
+          # promote.yml flips it after the soak window.
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
+          echo "Published $TAG as a prerelease. It will not reach the fleet until promoted."

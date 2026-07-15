@@ -1,0 +1,67 @@
+name: Promote prerelease
+
+# The soak gate for agent releases. A vX.Y.Z prerelease (created by
+# release-please.yml) is promoted to a stable release only after it has soaked
+# for a while with no one aborting it. Promotion is the moment it reaches the
+# fleet: stable-channel nodes then update within ~60 min.
+#
+# To ABORT a release during soak: delete the prerelease (or mark it a draft) on
+# the Releases page, and it will never be promoted.
+
+on:
+  schedule:
+    - cron: "23 * * * *" # hourly, off the top of the hour
+  workflow_dispatch: {} # promote now, skipping the remaining soak
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Promote the soaked prerelease to stable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          # How long a vX.Y.Z prerelease must soak before auto-promotion.
+          # Set a repo variable AGENT_SOAK_HOURS to change it. manual dispatch
+          # promotes immediately regardless.
+          SOAK_HOURS: ${{ vars.AGENT_SOAK_HOURS || '24' }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+
+          # Newest published vX.Y.Z prerelease. Ignore dev-* prereleases and
+          # drafts. Only the newest is considered: an older prerelease still
+          # soaking has been superseded, so it is intentionally left behind.
+          rel=$(gh api "repos/$REPO/releases" --paginate --jq \
+            '[.[] | select(.draft==false and .prerelease==true and (.tag_name|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")))] | sort_by(.created_at) | last // empty')
+
+          if [ -z "$rel" ]; then
+            echo "No vX.Y.Z prerelease awaiting promotion."
+            exit 0
+          fi
+
+          tag=$(echo "$rel" | jq -r '.tag_name')
+          published=$(echo "$rel" | jq -r '.published_at')
+          age_h=$(( ( $(date -u +%s) - $(date -u -d "$published" +%s) ) / 3600 ))
+          echo "Candidate $tag  published $published  age ${age_h}h  soak ${SOAK_HOURS}h  force=$FORCE"
+
+          if [ "$FORCE" != "true" ] && [ "$age_h" -lt "$SOAK_HOURS" ]; then
+            echo "Still soaking (${age_h}h < ${SOAK_HOURS}h). Not promoting."
+            exit 0
+          fi
+
+          # Never step backwards: skip if a newer-or-equal stable already exists.
+          latest_stable=$(gh api "repos/$REPO/releases/latest" --jq '.tag_name' 2>/dev/null || echo "")
+          if [ -n "$latest_stable" ] && [ "$latest_stable" != "$tag" ]; then
+            newest=$(printf '%s\n%s\n' "${latest_stable#v}" "${tag#v}" | sort -V | tail -1)
+            if [ "v$newest" = "$latest_stable" ]; then
+              echo "A newer stable ($latest_stable) already exists; not promoting $tag."
+              exit 0
+            fi
+          fi
+
+          echo "Promoting $tag to stable (latest). Stable-channel nodes update within ~60 min."
+          gh release edit "$tag" --repo "$REPO" --prerelease=false --latest
