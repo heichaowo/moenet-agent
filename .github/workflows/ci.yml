@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   GO_VERSION: '1.26.4'
 
@@ -82,13 +86,43 @@ jobs:
     needs: [lint, test]
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      
+
       - name: Build
         run: |
           go build -o moenet-agent ./cmd/moenet-agent
           ./moenet-agent -version || true
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [lint, test, contract-sync, build, secret-scan]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - << 'EOF'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          bad = [k for k, v in needs.items() if v["result"] not in ("success", "skipped")]
+          if bad:
+              print(f"Failed or cancelled jobs: {bad}", file=sys.stderr)
+              sys.exit(1)
+          print("All CI jobs passed or were skipped.")
+          EOF
